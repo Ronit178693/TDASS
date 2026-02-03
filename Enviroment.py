@@ -1,6 +1,7 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+import pygame
 import time
 
 # ==========================================
@@ -23,6 +24,20 @@ class SimpleGame(gym.Env):
         self.goal_pos = [4, 4]
         # The Obstacle is at [2,2]
         self.obs_pos = [2,2]
+
+        # Pygame Setup 
+        # Define colors
+        self.WHITE = (255, 255, 255)
+        self.BLACK = (0, 0, 0)
+        self.GREEN = (0, 255, 0)
+        self.RED = (255, 0, 0)
+        self.BLUE = (0, 0, 255)
+        # Screen dimensions
+        self.window_size = 500
+        self.cell_size = self.window_size // self.grid_size
+        self.window = None
+        self.clock = None
+
 
     def reset(self, seed=None, options=None):
         # Reset player to start
