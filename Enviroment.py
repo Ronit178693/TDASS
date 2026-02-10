@@ -1,4 +1,5 @@
 import gymnasium as gym
+from Element_Logic.red_logic import Red_logic
 from gymnasium import spaces
 import numpy as np
 import pygame
@@ -38,20 +39,21 @@ class SimpleGame(gym.Env):
         self.window = None
         self.clock = None
 
+#  As we are only playing a single game our reset function is nt helping us but when playing more then one game it helps
 
-    def reset(self, seed=None, options=None):
-        # Reset player to start
-        self.player_pos = [0, 0]
+    # def reset(self):
+    #     # Reset player to start
+    #     self.player_pos = [0, 0]
         
-        # create the empty grid (0 = empty)
-        grid = np.zeros((5, 5), dtype=int)
+    #     # create the empty grid (0 = empty)
+    #     grid = np.zeros((5, 5), dtype=int)
         
-        # Place player (1) and goal (2) and obstacle (3)
-        grid[self.player_pos[0], self.player_pos[1]] = 1
-        grid[self.goal_pos[0], self.goal_pos[1]] = 2
-        grid[self.obs_pos[0], self.obs_pos[1]] = 3  
+    #     # Place player (1) and goal (2) and obstacle (3)
+    #     grid[self.player_pos[0], self.player_pos[1]] = 1
+    #     grid[self.goal_pos[0], self.goal_pos[1]] = 2
+    #     grid[self.obs_pos[0], self.obs_pos[1]] = 3  
         
-        return grid, {}
+    #     return grid, {}
 
     def _get_obs(self):
         # Data Flattening
@@ -82,6 +84,9 @@ class SimpleGame(gym.Env):
             self.player_pos[1] = max(0, self.player_pos[1] - 1)
         elif action == 3: # Right
             self.player_pos[1] = min(4, self.player_pos[1] + 1)
+            
+        # Update Red entity position
+        Red_logic(self)
 
         # Default values
         # With every step the agent takes it loses 1 point
@@ -197,6 +202,3 @@ for step in range(50):
     time.sleep(0) # Pause so we can read the output
     
 env.close() #Closing the environment
-    
-    
-# Remember to trun the target to enemy and add obstacles for more complex scenarios! and increase the grid size!
