@@ -35,11 +35,11 @@ def Red_logic(self):
         if move == 0: # Up (decrease row)
             enemy_x = max(0, enemy_x - 1)
         elif move == 1: # Down (increase row)
-            enemy_x = min(4, enemy_x + 1)
+            enemy_x = min(self.grid_size - 1, enemy_x + 1)
         elif move == 2: # Left (decrease col)
             enemy_y = max(0, enemy_y - 1)
         elif move == 3: # Right (increase col)
-            enemy_y = min(4, enemy_y + 1)
+            enemy_y = min(self.grid_size - 1, enemy_y + 1)
 
     # Update the position in the game state
     self.goal_pos = [enemy_x, enemy_y]

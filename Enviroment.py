@@ -11,20 +11,20 @@ import time
 class SimpleGame(gym.Env):
     def __init__(self, render_mode="human"):
         # We define a 5x5 grid (smaller is easier to read)
-        self.grid_size = 5
+        self.grid_size = 20
         self.render_mode = render_mode
         # ACTIONS: We have 4 buttons: 0=Up, 1=Down, 2=Left, 3=Right
         self.action_space = spaces.Discrete(4)
         
         # OBSERVATION: The screen is a 5x5 grid of numbers
-        self.observation_space = spaces.MultiDiscrete([5, 5, 5, 5])
+        self.observation_space = spaces.MultiDiscrete([20, 20, 20, 20])
         
         # The Player starts at top-left [0,0]
         self.player_pos = [0, 0]
         # The Goal is at bottom-right [4,4]
-        self.goal_pos = [4, 4]
+        self.goal_pos = [19, 19]
         # The Obstacle is at [2,2]
-        self.obs_pos = [2,2]
+        self.obs_pos = [10,10]
 
         # Pygame Setup 
         # Define colors
@@ -68,7 +68,7 @@ class SimpleGame(gym.Env):
         # 3. Calculate rewards
         # 4. Check if the game is over
 
-        grid = np.zeros((5, 5), dtype=int)
+        grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
         grid[self.player_pos[0], self.player_pos[1]] = 1 # Player
         grid[self.goal_pos[0], self.goal_pos[1]] = 2  # Goal
         grid[self.obs_pos[0], self.obs_pos[1]] = 3  # Obstacle
@@ -79,11 +79,11 @@ class SimpleGame(gym.Env):
         if action == 0: # Up
             self.player_pos[0] = max(0, self.player_pos[0] - 1)
         elif action == 1: # Down
-            self.player_pos[0] = min(4, self.player_pos[0] + 1)
+            self.player_pos[0] = min(self.grid_size - 1, self.player_pos[0] + 1)
         elif action == 2: # Left
             self.player_pos[1] = max(0, self.player_pos[1] - 1)
         elif action == 3: # Right
-            self.player_pos[1] = min(4, self.player_pos[1] + 1)
+            self.player_pos[1] = min(self.grid_size - 1, self.player_pos[1] + 1)
             
         # Update Red entity position
         Red_logic(self)
@@ -93,6 +93,7 @@ class SimpleGame(gym.Env):
         reward = -0.1
         terminated = False
 
+        # We dont check for wall colisions as our model will learn it from the rewards 
         # Wall collision check
         if self.player_pos == self.obs_pos:
             # Penalty for hitting the wall
@@ -153,7 +154,7 @@ class SimpleGame(gym.Env):
         else:
             # Console Render
             # Manually create grid for visualization
-            grid = np.zeros((5, 5), dtype=int)
+            grid = np.zeros((self.grid_size, self.grid_size), dtype=int)
             grid[self.player_pos[0], self.player_pos[1]] = 1
             grid[self.goal_pos[0], self.goal_pos[1]] = 2
             grid[self.obs_pos[0], self.obs_pos[1]] = 3
@@ -181,8 +182,8 @@ env.reset()
 print("GAME START! (B = Player, R = Enemy, O = Obstacle)")
 env.render()
 
-# 2. Let's take 10 steps
-for step in range(50):
+# 2. Let's take 200 steps
+for step in range(200):
     # Pick a RANDOM button (0, 1, 2, or 3)
     # In a real AI, the AI would choose this.
     action = env.action_space.sample() 
