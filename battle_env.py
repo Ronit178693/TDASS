@@ -503,6 +503,16 @@ class BattleEnv(gym.Env):
 
         unit["pos"] = [nr, nc]
         unit["fuel"] -= fuel_cost
+
+        # CONSUME SUPPLY: If a unit hits a crate, reload and heal
+        for i, drop in enumerate(self.supply_drops):
+            if drop["pos"] == (nr, nc):
+                unit["hp"] = min(100, unit["hp"] + 30)
+                unit["ammo"] = min(50, unit["ammo"] + 15)
+                unit["fuel"] = min(100, unit["fuel"] + 50)
+                self.supply_drops.pop(i)
+                self.combat_log.append(f"{unit['id']}: Collected SUPPLY 📦")
+                break
         return 0.0
 
     def _do_melee(self, attacker, defender, nr, nc, fuel_cost):
