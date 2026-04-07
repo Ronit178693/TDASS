@@ -4,14 +4,12 @@
 <!--                        ANIMATED HEADER                            -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 
-<img src="https://capsule-render.vercel.app/api?type=waving&amp;color=0:0d1117,50:00c8ff,100:ff1e50&amp;height=220&amp;section=header&amp;text=⚔️%20T%20D%20A%20S%20S&amp;fontSize=80&amp;fontColor=ffffff&amp;animation=fadeIn&amp;fontAlignY=35&amp;desc=Tactical%20Decision%20%26%20Analysis%20Support%20System&amp;descSize=18&amp;descAlignY=58&amp;descAlign=50" width="100%"/>
+[![TDASS Header](https://capsule-render.vercel.app/api?type=waving&color=0:0d1117,50:00c8ff,100:ff1e50&height=220&section=header&text=TDASS&fontSize=80&fontColor=ffffff&animation=fadeIn&fontAlignY=35&desc=AI%20Tactical%20Decision%20Support%20System&descSize=18&descAlignY=58&descAlign=50)](https://github.com/Ronit178693/TDASS)
 
 <br/>
 
 <!-- Animated Typing Banner -->
-<a href="#">
-  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&amp;weight=800&amp;size=28&amp;duration=3000&amp;pause=1000&amp;color=00C8FF&amp;center=true&amp;vCenter=true&amp;multiline=true&amp;repeat=true&amp;width=800&amp;height=100&amp;lines=🧠+AI-Powered+Battlefield+Intelligence;🔮+LSTM+Oracle+%7C+Real-Time+Intent+Prediction;⚡+Cyber-Directive+Tactical+Visualizer;🛡️+Multi-Agent+Combat+Simulation+Engine" alt="Typing SVG" />
-</a>
+![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=800&size=28&duration=3000&pause=1000&color=00C8FF&center=true&vCenter=true&multiline=true&repeat=true&width=800&height=100&lines=AI-Powered+Battlefield+Intelligence;LSTM+Oracle+Real-Time+Intent+Prediction;Cyber-Directive+Tactical+Visualizer;Multi-Agent+Combat+Simulation+Engine)
 
 <br/>
 <br/>
