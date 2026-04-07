@@ -4,12 +4,12 @@
 <!--                        ANIMATED HEADER                            -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 
-[![TDASS Header](https://capsule-render.vercel.app/api?type=waving&color=0:0d1117,50:00c8ff,100:ff1e50&height=220&section=header&text=TDASS&fontSize=80&fontColor=ffffff&animation=fadeIn&fontAlignY=35&desc=AI%20Tactical%20Decision%20Support%20System&descSize=18&descAlignY=58&descAlign=50)](https://github.com/Ronit178693/TDASS)
+[![TDASS Header](https://capsule-render.vercel.app/api?type=waving&color=0:0d1117,50:00c8ff,100:ff1e50&height=250&section=header&text=TDASS&fontSize=70&fontColor=ffffff&animation=fadeIn&fontAlignY=40&desc=AI%20Tactical%20Decision%20Support%20System&descSize=20&descAlignY=65&descAlign=50)](https://github.com/Ronit178693/TDASS)
 
 <br/>
 
 <!-- Animated Typing Banner -->
-![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=800&size=28&duration=3000&pause=1000&color=00C8FF&center=true&vCenter=true&multiline=true&repeat=true&width=800&height=100&lines=AI-Powered+Battlefield+Intelligence;LSTM+Oracle+Real-Time+Intent+Prediction;Cyber-Directive+Tactical+Visualizer;Multi-Agent+Combat+Simulation+Engine)
+![Typing SVG](https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=800&size=24&duration=3000&pause=1000&color=00C8FF&center=true&vCenter=true&width=800&height=50&lines=AI-Powered+Battlefield+Intelligence;LSTM+Oracle+Real-Time+Intent+Prediction;Cyber-Directive+Tactical+Visualizer;Multi-Agent+Combat+Simulation+Engine)
 
 <br/>
 <br/>
