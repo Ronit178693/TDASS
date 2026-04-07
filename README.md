@@ -4,36 +4,36 @@
 <!--                        ANIMATED HEADER                            -->
 <!-- ═══════════════════════════════════════════════════════════════════ -->
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:0d1117,50:00c8ff,100:ff1e50&height=220&section=header&text=⚔️%20T%20D%20A%20S%20S&fontSize=80&fontColor=ffffff&animation=fadeIn&fontAlignY=35&desc=Tactical%20Decision%20%26%20Analysis%20Support%20System&descSize=18&descAlignY=58&descAlign=50" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&amp;color=0:0d1117,50:00c8ff,100:ff1e50&amp;height=220&amp;section=header&amp;text=⚔️%20T%20D%20A%20S%20S&amp;fontSize=80&amp;fontColor=ffffff&amp;animation=fadeIn&amp;fontAlignY=35&amp;desc=Tactical%20Decision%20%26%20Analysis%20Support%20System&amp;descSize=18&amp;descAlignY=58&amp;descAlign=50" width="100%"/>
 
 <br/>
 
 <!-- Animated Typing Banner -->
 <a href="#">
-  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&weight=800&size=28&duration=3000&pause=1000&color=00C8FF&center=true&vCenter=true&multiline=true&repeat=true&width=800&height=100&lines=🧠+AI-Powered+Battlefield+Intelligence;🔮+LSTM+Oracle+%7C+Real-Time+Intent+Prediction;⚡+Cyber-Directive+Tactical+Visualizer;🛡️+Multi-Agent+Combat+Simulation+Engine" alt="Typing SVG" />
+  <img src="https://readme-typing-svg.demolab.com?font=JetBrains+Mono&amp;weight=800&amp;size=28&amp;duration=3000&amp;pause=1000&amp;color=00C8FF&amp;center=true&amp;vCenter=true&amp;multiline=true&amp;repeat=true&amp;width=800&amp;height=100&amp;lines=🧠+AI-Powered+Battlefield+Intelligence;🔮+LSTM+Oracle+%7C+Real-Time+Intent+Prediction;⚡+Cyber-Directive+Tactical+Visualizer;🛡️+Multi-Agent+Combat+Simulation+Engine" alt="Typing SVG" />
 </a>
 
 <br/>
 <br/>
 
 <!-- Tech Stack Badges -->
-<img src="https://img.shields.io/badge/Python-3.12.5-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
-<img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white"/>
-<img src="https://img.shields.io/badge/Pygame-2.6.1-00D94F?style=for-the-badge&logo=pygame&logoColor=white"/>
-<img src="https://img.shields.io/badge/Gymnasium-1.0+-0081A7?style=for-the-badge&logo=openaigym&logoColor=white"/>
-<img src="https://img.shields.io/badge/NumPy-1.24+-013243?style=for-the-badge&logo=numpy&logoColor=white"/>
-<img src="https://img.shields.io/badge/SciPy-Gaussian-8CAAE6?style=for-the-badge&logo=scipy&logoColor=white"/>
+<img src="https://img.shields.io/badge/Python-3.12.5-3776AB?style=for-the-badge&amp;logo=python&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&amp;logo=pytorch&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/Pygame-2.6.1-00D94F?style=for-the-badge&amp;logo=pygame&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/Gymnasium-1.0+-0081A7?style=for-the-badge&amp;logo=openaigym&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/NumPy-1.24+-013243?style=for-the-badge&amp;logo=numpy&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/SciPy-Gaussian-8CAAE6?style=for-the-badge&amp;logo=scipy&amp;logoColor=white"/>
 
 <br/>
 <br/>
 
 <!-- Status Badges -->
-<img src="https://img.shields.io/badge/Build-Stable-00ff88?style=flat-square&logo=checkmarx&logoColor=white"/>
-<img src="https://img.shields.io/badge/Oracle-Trained-ff6b35?style=flat-square&logo=tencentqq&logoColor=white"/>
-<img src="https://img.shields.io/badge/Codebase-100%25%20Annotated-blueviolet?style=flat-square&logo=readthedocs&logoColor=white"/>
-<img src="https://img.shields.io/badge/Dataset-100K%20Rows-gold?style=flat-square&logo=databricks&logoColor=white"/>
-<img src="https://img.shields.io/badge/Models-2%20LSTM%20Networks-cyan?style=flat-square&logo=pytorch&logoColor=white"/>
-<img src="https://img.shields.io/badge/License-Academic-lightgrey?style=flat-square&logo=creativecommons&logoColor=white"/>
+<img src="https://img.shields.io/badge/Build-Stable-00ff88?style=flat-square&amp;logo=checkmarx&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/Oracle-Trained-ff6b35?style=flat-square&amp;logo=tencentqq&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/Codebase-100%25%20Annotated-blueviolet?style=flat-square&amp;logo=readthedocs&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/Dataset-100K%20Rows-gold?style=flat-square&amp;logo=databricks&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/Models-2%20LSTM%20Networks-cyan?style=flat-square&amp;logo=pytorch&amp;logoColor=white"/>
+<img src="https://img.shields.io/badge/License-Academic-lightgrey?style=flat-square&amp;logo=creativecommons&amp;logoColor=white"/>
 
 <br/>
 <br/>
@@ -373,7 +373,7 @@ The engine includes a lightweight **VFX particle emitter** for:
 
 <div align="center">
 
-<img src="https://img.shields.io/badge/Module-Neural%20Intelligence-ff6b35?style=for-the-badge"/> <img src="https://img.shields.io/badge/Models-2%20BiLSTMs-EE4C2C?style=for-the-badge&logo=pytorch"/>
+<img src="https://img.shields.io/badge/Module-Neural%20Intelligence-ff6b35?style=for-the-badge"/> <img src="https://img.shields.io/badge/Models-2%20BiLSTMs-EE4C2C?style=for-the-badge&amp;logo=pytorch"/>
 
 </div>
 
@@ -957,7 +957,7 @@ python -m oracle.train_oracle
 
 <br/>
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:ff1e50,50:00c8ff,100:00ffb4&height=120&section=footer&animation=twinkling" width="100%"/>
+<img src="https://capsule-render.vercel.app/api?type=waving&amp;color=0:ff1e50,50:00c8ff,100:00ffb4&amp;height=120&amp;section=footer&amp;animation=twinkling" width="100%"/>
 
 <br/>
 
@@ -965,7 +965,7 @@ python -m oracle.train_oracle
 
 <br/>
 
-<img src="https://img.shields.io/badge/Made%20With-Python%20%7C%20PyTorch%20%7C%20Pygame-0d1117?style=for-the-badge&logo=python&logoColor=white"/>
+<img src="https://img.shields.io/badge/Made%20With-Python%20%7C%20PyTorch%20%7C%20Pygame-0d1117?style=for-the-badge&amp;logo=python&amp;logoColor=white"/>
 
 <br/>
 <br/>
@@ -977,6 +977,6 @@ python -m oracle.train_oracle
 
 <br/>
 
-<sub>TDASS — Tactical Decision & Analysis Support System © 2026</sub>
+<sub>TDASS — Tactical Decision &amp; Analysis Support System © 2026</sub>
 
 </div>
