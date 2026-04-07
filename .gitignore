@@ -1,0 +1,21 @@
+# Python Virtual Environment
+venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Data
+battle_data.csv
+
+# IDEs
+.vscode/
+.idea/
+.spyderproject/
+.settings/
+
+# OS generated files
+.DS_Store
+Thumbs.db
