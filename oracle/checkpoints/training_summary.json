@@ -1,0 +1,9 @@
+{
+  "best_action_accuracy": 0.5771635406383678,
+  "best_intent_accuracy": 0.9135680596687507,
+  "epochs": 30,
+  "window_size": 10,
+  "num_features": 12,
+  "hidden_size": 128,
+  "device": "cpu"
+}
