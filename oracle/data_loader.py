@@ -1,359 +1,252 @@
-# Document string for the data loader module.
+# Comprehensive data loading and preprocessing utility for the Oracle AI subsystem.
 """
-# Source file name and module purpose.
+# This module serves as the primary data pipeline, transforming raw battle logs into structured sequences for the LSTM.
 data_loader.py — B1: Data Preprocessing for Oracle
-# Visual separator for documentation.
+# Visual divider for internal documentation structure.
 ====================================================
-# Summary of script functionality.
+# The logic here handles sliding window generation, min-max feature scaling, and categorical encoding.
 Loads battle_data.csv, creates windowed sequences (last N steps) for LSTM,
-# Details on hardware utility classes provided.
+# It ensures the PyTorch models receive normalized, temporally consistent tensors.
 and provides PyTorch Dataset / DataLoader utilities.
-# Empty line.
 
-# List of input variables being analyzed.
+# The feature set encompasses spatial, resource, psychological, and tactical dimensions.
 Features extracted per timestep:
-# Positional coordinates for both factions.
+# Unit coordinates allow the model to learn spatial positioning and flanking patterns.
   - red_x, red_y, blue_x, blue_y          (positions)
-# Vital resource statistics.
+# Tracking vital stats like HP and Ammo helps the model predict Retreat or Resupply intents.
   - red_hp, red_ammo, red_fuel             (resources)
-# Internal psychological and environmental state.
+# Morale and elevation provide the "soft" tactical context of the engagement.
   - red_morale, red_elevation              (state)
-# Distances and visibility conditions.
+# Distance and visibility metrics define the visibility constraints (Fog of War) for the AI.
   - distance, fog_visible                  (tactical)
-# Historical action context.
+# Historical action context allows the LSTM to recognize repetitive or chained behaviors.
   - red_prev_action                        (history)
-# Empty line.
 
-# Description of the target outputs for prediction.
+# The model is trained to predict two distinct levels of enemy behavior.
 Targets:
-# Movement and combat action categories.
+# Micros-tactical level: The specific grid-based move or combat action taken in the next frame.
   - red_next_action   (6 classes: Stay/Up/Down/Left/Right/RangedAttack)
-# Strategic intent categories.
+# Macro-strategic level: The overarching tactical intent or "posture" of the enemy unit.
   - red_posture       (5 classes: SCOUT/ATTACK/RETREAT/FLANK/RESUPPLY)
-# Closing docstring.
 """
-# Empty line.
 
-# Numerical computations library.
+# Import numpy for high-performance numerical array operations and sequence manipulation.
 import numpy as np
-# Data manipulation and analysis library.
+# Import pandas for flexible CSV parsing and tabular data transformations.
 import pandas as pd
-# Machine learning framework.
+# Import the core PyTorch library for deep learning tensor operations.
 import torch
-# Specific utilities for managing data batches.
+# Import standard PyTorch utilities for batching and dataset management.
 from torch.utils.data import Dataset, DataLoader
-# Utility to convert labels into numerical formats.
+# Import LabelEncoder to map categorical posture strings into numerical classification targets.
 from sklearn.preprocessing import LabelEncoder
-# Empty line.
 
+# ──────────────────────────────────────────────
+# Global Configuration: Define the numerical signatures of the battlefield.
+# ──────────────────────────────────────────────
 
-# Decorative line for visual grouping.
-# ──────────────────────────────────────────────
-# Header for the feature and label configuration section.
-# Feature & label columns
-# Decorative line for visual grouping.
-# ──────────────────────────────────────────────
-# List of column names used as model inputs.
+# Explicit list of columns that represent the input state space for the neural network.
 FEATURE_COLS = [
-# X and Y coordinates.
+    # Red and Blue grid coordinates, enabling the model to learn spatial relationships.
     "red_x", "red_y", "blue_x", "blue_y",
-# Health, ammunition, and fuel stats.
+    # Vital unit metrics used to infer tactical urgency (e.g., low HP suggests a retreat).
     "red_hp", "red_ammo", "red_fuel",
-# Morale and altitude stats.
+    # Psychological and environmental variables that modify combat effectiveness.
     "red_morale", "red_elevation",
-# Tactical distance and fog status.
+    # Pre-calculated tactical features that simplify the model's spatial reasoning.
     "distance", "fog_visible",
-# Previous step's action code.
+    # The previous action ensures the model has a "short-term memory" of immediate history.
     "red_prev_action",
-# Closing list bracket.
 ]
-# Empty line.
 
-# List of strings defining enemy strategic postures.
+# The high-level behaviors we want the 'Intent Classifier' to recognize in the enemy.
 POSTURE_CLASSES = ["SCOUT", "ATTACK", "RETREAT", "FLANK", "RESUPPLY"]
-# Integer count of possible discrete actions.
+# Total number of discrete actions available in the BattleEnv Gymnasium environment.
 ACTION_CLASSES  = 6  # 0-5
-# Empty line.
 
-# Dictionary defining normalization boundaries for min-max scaling.
-# Normalization ranges (for min-max scaling)
+# Hardcoded normalization bounds to ensure consistent feature scaling across training and inference.
 NORM_RANGES = {
-# X and Y coordinate limits.
+    # Boundaries for unit positions on the 10x10 tactical grid.
     "red_x": (0, 9), "red_y": (0, 9),
-# Foe X and Y coordinate limits.
     "blue_x": (0, 9), "blue_y": (0, 9),
-# Resource value limits.
+    # Maximum possible values for unit resources as defined in the environment constants.
     "red_hp": (0, 100), "red_ammo": (0, 50), "red_fuel": (0, 100),
-# Psychology and environment limits.
+    # Morale and Elevation ranges used to scale these state variables between 0 and 1.
     "red_morale": (20, 150), "red_elevation": (0, 2),
-# Tactical distance and visibility limits.
+    # Maximum Manhattan distance on a 10x10 grid and binary visibility flag.
     "distance": (0, 18), "fog_visible": (0, 1),
-# Action index limits.
+    # Action indices ranging from 0 (Stay) to 5 (RangedAttack).
     "red_prev_action": (0, 5),
-# Closing dictionary bracket.
 }
-# Empty line.
 
+# ──────────────────────────────────────────────
+# Data Transformation Logic
+# ──────────────────────────────────────────────
 
-# Function to scale features into a 0-1 range.
+# Scaler function that implements Min-Max normalization for numerical stability in the LSTM.
 def normalize_features(df, feature_cols=FEATURE_COLS):
-# Docstring explaining the min-max normalization process.
-    """Min-max normalize feature columns in-place, returns normalized copy."""
-# Create a copy of the dataframe to avoid source mutation.
+    """Min-max normalize feature columns to the [0, 1] range based on NORM_RANGES."""
+    # Create a deep copy of the DataFrame to ensure we don't modify the source data during preprocessing.
     df_norm = df.copy()
-# Iterate through each column designated for features.
+    # Iterate through every feature column required by the model.
     for col in feature_cols:
-# Retrieve scaling bounds from the configuration dictionary.
+        # Fetch the predefined min/max values for this specific feature; fall back to data min/max if not found.
         lo, hi = NORM_RANGES.get(col, (df[col].min(), df[col].max()))
-# Calculate the range spread, defaulting to 1.0 to avoid division by zero.
+        # Determine the denominator for scaling; default to 1.0 if the column is constant to avoid division errors.
         rng = hi - lo if hi != lo else 1.0
-# Apply the min-max formula and store as floats.
+        # Perform the actual scaling: (Value - Min) / (Max - Min).
         df_norm[col] = (df[col].astype(float) - lo) / rng
-# Return the processed dataframe.
+    # Return the fully normalized dataset, now ready for neural network consumption.
     return df_norm
-# Empty line.
 
-
-# Main data entry point for reading CSV files.
+# Primary loader function that converts the raw CSV log into a structured data format.
 def load_battle_data(csv_path, feature_cols=FEATURE_COLS):
-# Docstring block.
-    """
-# Overview of loading and preprocessing.
-    Load and preprocess battle_data.csv.
-# Empty line.
-
-# Description of the three return objects.
-    Returns:
-# The original dataframe.
-        df: raw DataFrame
-# The scaled dataframe.
-        df_norm: normalized DataFrame
-# The encoder for text labels.
-        posture_encoder: fitted LabelEncoder for postures
-# Closing docstring.
-    """
-# Read the file from disk using pandas.
+    """Loads raw battle logs, parses categorical labels, and applies normalization."""
+    # Use pandas to load the generated CSV from the simulation runs.
     df = pd.read_csv(csv_path)
-# Empty line.
 
-# Loop to ensure all feature columns are numeric type.
-    # Ensure numeric types
+    # Sanitize the input by ensuring all expected feature columns are treated as numeric data.
     for col in feature_cols:
-# Convert to number and fill gaps with zeros.
+        # Convert to numbers and fill any missing or corrupt entries with 0.
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
-# Empty line.
 
-# Logic for converting text postures into numbers.
-    # Encode posture labels
-# Initialize the encoder object.
+    # Initialize the SKLearn LabelEncoder to transform string postures (e.g., 'ATTACK') into class indices.
     posture_encoder = LabelEncoder()
-# Fit the encoder to the predefined category strings.
+    # Fit the encoder to our fixed set of strategic postures.
     posture_encoder.fit(POSTURE_CLASSES)
-# Map text postures in the dataframe to their corresponding integer codes.
-    # Handle any unseen labels gracefully
+    # Map the enemy's categorical 'posture' into a 'posture_label' column for classification training.
     df["posture_label"] = df["red_posture"].apply(
-# Inline function to handle matching or defaulting to zero.
+        # Handle lookup: if a posture is unknown, default to the first class (index 0).
         lambda x: posture_encoder.transform([x])[0] if x in POSTURE_CLASSES else 0
-# Closing apply function.
     )
-# Empty line.
 
-# Explicitly cast next actions to integers.
-    # Action label (already int 0-5)
+    # Ensure the 'next_action' target is represented as an integer Action ID (0-5).
     df["action_label"] = df["red_next_action"].astype(int)
-# Empty line.
 
-# Apply the normalization scaling defined earlier.
-    # Normalize
+    # Apply global normalization scaling to prepare the data for the gradient descent process.
     df_norm = normalize_features(df, feature_cols)
-# Empty line.
 
-# Return the trio of data objects.
+    # Return the raw data, the normalized data, and the encoder for later use during inference or evaluation.
     return df, df_norm, posture_encoder
-# Empty line.
 
+# ──────────────────────────────────────────────
+# Sequence Engineering: Constructing the sliding window history.
+# ──────────────────────────────────────────────
 
-# Decorative line.
-# ──────────────────────────────────────────────
-# Header for sequence construction section.
-# Windowed sequence builder
-# Decorative line.
-# ──────────────────────────────────────────────
-# Function to convert flat tabular data into windowed 3D tensors.
+# Core function that converts flat tabular data into 3D tensors (Samples, Time, Features) for the LSTM.
 def build_sequences(df_norm, df_raw, window_size=10, feature_cols=FEATURE_COLS):
-# Docstring block.
-    """
-# Description of sliding window technique grouped by entity IDs.
-    Build sliding-window sequences grouped by (match_id, red_id).
-# Empty line.
-
-# Explanation of arguments.
-    Args:
-# The scaled dataset.
-        df_norm:      normalized DataFrame
-# The original dataset.
-        df_raw:       raw DataFrame (for labels)
-# The longitudinal depth of history.
-        window_size:  number of timesteps per sequence
-# Empty line.
-
-# Explanation of return values.
-    Returns:
-# 3D input array.
-        X: np.ndarray (N, window_size, num_features)
-# Action targets.
-        y_action: np.ndarray (N,)  — next action class
-# Intent targets.
-        y_posture: np.ndarray (N,) — posture class
-# Spatial coordinates at the target time.
-        positions: np.ndarray (N, 2) — (red_x, red_y) at prediction time
-# Closing docstring.
-    """
-# Initialize empty lists to collect sequence fragments.
+    """Constructs 3D time-series sequences grouped by specific unit IDs to prevent data leakage."""
+    # Lists used to accumulate the 3D X tensors and their corresponding 1D y labels.
     X_list, ya_list, yp_list, pos_list = [], [], [], []
-# Empty line.
 
-# Split data by match session and specific unit ID to maintain temporal integrity.
+    # Extremely important: Group by match and unit ID so we don't accidentally blend different units' histories.
     grouped = df_norm.groupby(["match_id", "red_id"])
-# Empty line.
 
-# Iterate over each group of chronological steps per unit.
+    # Process each unique unit's trajectory through a single match as a separate timeline.
     for (match_id, red_id), group in grouped:
-# Extract pure numerical feature values.
+        # Extract the sequence of normalized feature vectors.
         features = group[feature_cols].values
-# Match numerical indices to the raw labels dataframe.
+        # Link the normalized group back to the raw labels using their shared DataFrame index.
         raw_group = df_raw.loc[group.index]
-# Extract targets and coordinates.
+        # Extract the ground-truth targets (Actions and Postures) for supervised learning.
         actions   = raw_group["action_label"].values
         postures  = raw_group["posture_label"].values
+        # Store coordinates separately for visualizing heatmap predictions later.
         red_xs    = raw_group["red_x"].values
         red_ys    = raw_group["red_y"].values
-# Empty line.
 
-# Filter out paths too short to form a single window.
+        # If a unit has fewer steps than our required history window, we cannot generate a sequence for it.
         if len(features) < window_size + 1:
-# Skip to the next unit.
+            # Skip this unit and proceed to the next available trajectory.
             continue
-# Empty line.
 
-# Sliding window iteration across the unit's timeline.
+        # Implement the sliding window: For every step 'i', look back 'window_size' steps.
         for i in range(window_size, len(features)):
-# Slice out a window of 'window_size' steps.
+            # Capture the past 'window_size' steps as the input 'X'.
             window = features[i - window_size : i]
-# Append the slice to the input list.
+            # Add this historical context to our training buffer.
             X_list.append(window)
-# Append the single target value corresponding to the step immediately after the window.
+            # The label 'y' is always the action/posture taken at step 'i' (immediately following the window).
             ya_list.append(actions[i])
             yp_list.append(postures[i])
-# Append spatial coordinates for heatmap validation.
+            # Save the coordinates so we know where this target action actually occurred on the map.
             pos_list.append([red_xs[i], red_ys[i]])
-# Empty line.
 
-# Convert collected lists into solid numpy arrays.
+    # Convert the Python lists into high-performance 32-bit float numpy arrays for model training.
     X = np.array(X_list, dtype=np.float32)
-# Convert target labels to 64-bit integers.
+    # Labels must be 64-bit integers (Long) for PyTorch classification loss functions.
     y_action  = np.array(ya_list, dtype=np.int64)
     y_posture = np.array(yp_list, dtype=np.int64)
-# Keep coordinates as floats.
+    # Positions remain as floats for spatial precision.
     positions = np.array(pos_list, dtype=np.float32)
-# Empty line.
 
-# Return the full dataset tensors.
+    # Return the assembled 3D input tensor and targets.
     return X, y_action, y_posture, positions
-# Empty line.
 
+# ──────────────────────────────────────────────
+# Deep Learning Integration: PyTorch Dataset Wrapper.
+# ──────────────────────────────────────────────
 
-# Decorative line.
-# ──────────────────────────────────────────────
-# Header for PyTorch integration section.
-# PyTorch Dataset
-# Decorative line.
-# ──────────────────────────────────────────────
-# Class for feeding battle data into PyTorch trainers.
+# Custom Dataset class that allows PyTorch DataLoaders to fetch and batch our sequences efficiently.
 class BattleSequenceDataset(Dataset):
-# Docstring.
-    """PyTorch Dataset wrapping windowed battle sequences."""
-# Empty line.
+    """A standard PyTorch Dataset used to wrap and serve tactical sequence data."""
 
-# Setup function to convert numpy arrays into torch tensors.
+    # Constructor that converts pre-built numpy arrays into PyTorch Tensors.
     def __init__(self, X, y_action, y_posture):
-# Convert inputs to float tensors.
+        # The 3D input tensor for the LSTM layers.
         self.X = torch.tensor(X, dtype=torch.float32)
-# Convert targets to long tensors (required for classification cross-entropy).
+        # The ground-truth tactical action labels (the target classes).
         self.y_action  = torch.tensor(y_action, dtype=torch.long)
+        # The ground-truth strategic intent labels for the secondary classifier.
         self.y_posture = torch.tensor(y_posture, dtype=torch.long)
-# Empty line.
 
-# Return the total count of sequences.
+    # Returns the total number of sequences available in this specific dataset partition.
     def __len__(self):
-# Count of the input array.
+        # Simply returns the length of the input tensor array.
         return len(self.X)
-# Empty line.
 
-# Return a specific item by its index.
+    # Standard getter that returns a single (input, action_target, posture_target) tuple for a given index.
     def __getitem__(self, idx):
-# Return a tuple containing the input window and both labels.
+        # Fetches the specific data point from internal tensor storage.
         return self.X[idx], self.y_action[idx], self.y_posture[idx]
-# Empty line.
 
-
-# End-to-end wrapper for loading everything in one go.
-def get_dataloaders(csv_path, window_size=10, batch_size=128,
-                    val_split=0.2, seed=42):
-# Docstring block detailing the process flow.
-    """
-# Flow: Disk -> Sequence -> Split -> Loaders.
-    End-to-end: load CSV → build sequences → split → return DataLoaders.
-# Empty line.
-
-# Return items description.
-    Returns:
-# Torch loaders and metadata.
-        train_loader, val_loader, posture_encoder, num_features
-# Closing docstring.
-    """
-# Perform raw loading and normalization.
+# Master orchestrator function that manages the entire pipeline from file to PyTorch Loaders.
+def get_dataloaders(csv_path, window_size=10, batch_size=128, val_split=0.2, seed=42):
+    """Executes the full pipeline: Load -> Preprocess -> Sequence -> Split -> Loaders."""
+    # Step 1: Load and normalize the raw data from the simulation logs.
     df, df_norm, posture_encoder = load_battle_data(csv_path)
-# Transform tabular data into windowed sequences.
+    # Step 2: Transform the tabular data into windowed time-series sequences.
     X, y_action, y_posture, _ = build_sequences(df_norm, df, window_size)
-# Empty line.
 
-# Debug output of dataset statistics.
+    # Print descriptive logs to help monitor dataset health and dimensions.
     print(f"  Sequences built: {len(X):,}")
     print(f"  Feature dim:     {X.shape[2]}")
     print(f"  Action classes:  {ACTION_CLASSES}")
     print(f"  Posture classes: {len(POSTURE_CLASSES)}")
-# Empty line.
 
-# Procedural split for training vs validation.
-    # Shuffle and split
-# Initialize random state for reproducibility.
+    # Step 3: Implement a randomized split to separate 'Training' data from 'Validation' data.
+    # Instantiate a repeatable random number generator for deterministic splits.
     rng = np.random.RandomState(seed)
-# Generate a shuffled list of all data indices.
+    # Creates a shuffled array of index pointers for all available sequences.
     indices = rng.permutation(len(X))
-# Determine the integer split point based on the percentage.
+    # Calculate the exact dividing point based on the val_split ratio.
     split = int(len(X) * (1 - val_split))
-# Empty line.
 
-# Assign indices to either training or validation sets.
+    # Divide the index pointers into two distinct sets.
     train_idx = indices[:split]
     val_idx   = indices[split:]
-# Empty line.
 
-# Wrap the partitioned numpy data into our custom Dataset classes.
+    # Step 4: Create the actual Training and Validation Dataset objects.
     train_ds = BattleSequenceDataset(X[train_idx], y_action[train_idx], y_posture[train_idx])
     val_ds   = BattleSequenceDataset(X[val_idx],   y_action[val_idx],   y_posture[val_idx])
-# Empty line.
 
-# Create non-interactive loaders that handle mini-batching on the GPU/CPU.
+    # Step 5: Wrap the Datasets in Loaders that handle automated batching and shuffling.
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True,  drop_last=True)
     val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, drop_last=False)
-# Empty line.
 
-# Final count report.
+    # Final report to verify batch counts.
     print(f"  Train batches:   {len(train_loader)}")
     print(f"  Val batches:     {len(val_loader)}")
-# Empty line.
 
-# Final return of all constructed components.
+    # Return the ready-to-use loaders, the encoder for labels, and the count of input features.
     return train_loader, val_loader, posture_encoder, X.shape[2]

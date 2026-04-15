@@ -1,169 +1,126 @@
-# File docstring for the secondary tactical logic engine.
+# Spatial validation and tactical scoring engine for maneuver feasibility.
 """
-# Header for the feasibility engine file.
+# This module implements the 'Safety Filter' that prevents the AI from making logistically or tactically unsound moves.
 feasibility_engine.py — Phase E: Tactical Move Validation
-# Visual separator.
 =========================================================
-# Functional summary of the engine's purpose.
-Calculates the viability of proposed tactical actions based on:
-# Logistics criteria.
-  1. Logistics (Fuel/Ammo)
-# Physical criteria.
-  2. Physics (Terrain/Elevation/Passability)
-# Oracle risk criteria.
-  3. Risk (Predicted Enemy Threat from Oracle)
-# End block.
+# It calculates a composite 'Viability Score' (0.0 to 1.0) for any proposed action.
+The scoring pipeline integrates three distinct vectors of analysis:
+# 1. Logistics: Verifies fuel reserves against the energetic cost of the terrain (Roads vs. Swamps).
+# 2. Physics: Evaluates verticality (Elevation) and physical impassability (Walls/Water).
+# 3. Intelligence: Integrates the Oracle's predicted threat heatmaps to avoid high-risk zones ('Death Traps').
 """
-# Empty line.
 
-# Import numpy for grid array manipulation and distance calculations.
+# NumPy for efficient spatial kernel operations and array handling.
 import numpy as np
-# Empty line.
 
-# Class definition for the tactical risk and pathing analyzer.
 class FeasibilityEngine:
-# Docstring.
     """
-    Evaluates the 'Calculated Risk' of proposed tactical maneuvers.
+    Analyzes the physics and tactical risk of the battlefield grid.
+    Translates raw environmental data and AI heatmaps into a single actionable score.
     """
-# Empty line.
     
-# Constructor to set up cost tables and grid limits.
     def __init__(self, grid_size=10):
-# Save dimension scaling.
+        """Initializes the constraint parameters and movement cost tables."""
         self.grid_size = grid_size
-# Define fuel consumption per terrain type.
-        # Energy cost per terrain type
+        # Energy/Fuel coefficient per Terrain ID.
+        # This table defines the engine's 'A-Star-like' cost heuristics.
         self.terrain_costs = {
-# Standard plains cost.
-            0: 1.0,  # Plains
-# Blocked movement (Infinite cost).
-            1: 99.0, # Wall (Impassable)
-# High friction forest cost.
-            2: 2.0,  # Forest
-# High cost water cost.
-            3: 5.0,  # Water (Difficult)
-# Low friction road cost.
-            4: 0.5,  # Road (Efficient)
-# Complex urban cost.
-            5: 1.5   # Urban
-# End of costs.
+            0: 1.0,  # Plains (Baseline movement)
+            1: 99.0, # Wall (Physical barrier - functional infinity)
+            2: 2.0,  # Forest (High friction/Cover)
+            3: 5.0,  # Water (Extreme energetic cost - slow fording)
+            4: 0.5,  # Road (Tactical advantage: High efficiency)
+            5: 1.5   # Urban (Complex navigation)
         }
-# Empty line.
-        
-# Method to determine if a unit has enough fuel for a move.
+
     def calculate_path_cost(self, start_pos, end_pos, terrain_map, fuel_current):
-# Docstring.
         """
-        Check if a move is logistically possible.
-        Uses Manhattan distance as a base, adjusted by terrain.
+        Evaluates the logistical viability of a maneuver.
+        
+        Args:
+            start_pos: Initial (r, c).
+            end_pos: Target (r, c).
+            terrain_map: Grid of terrain IDs.
+            fuel_current: Remaning fuel resources in the unit's tank.
+
+        Returns:
+            (feasibility: float, total_cost: float)
         """
-# Extract start coordinates.
         r1, c1 = start_pos
-# Extract end coordinates.
         r2, c2 = end_pos
-# Empty line.
         
-# Calculate the raw distance between points.
-        # Distance
+        # Calculate Manhattan distance (Orthogonal grid steps).
         dist = abs(r1 - r2) + abs(c1 - c2)
-# Check for null movement.
-        if dist == 0: return 1.0, 0.0 # Feasible
-# Empty line.
+        if dist == 0: return 1.0, 0.0 # Stationary stance has zero cost.
         
-# Calculate estimated fuel usage.
-        # Estimate cost (Simple linear path estimate)
-# Identify terrain type halfway between points for cost estimation.
+        # Heuristic: Sample the mid-point terrain to estimate the energy cost of the path.
         avg_terrain_type = terrain_map[int((r1+r2)/2), int((c1+c2)/2)]
-# Pull cost code from dictionary.
         cost_per_tile = self.terrain_costs.get(int(avg_terrain_type), 1.0)
-# Final fuel requirement.
+        
+        # Final energetic requirement.
         total_cost = dist * cost_per_tile
-# Empty line.
         
-# Calculate percentage of feasibility based on current fuel.
+        # Feasibility is the fraction of fuel remaining after the move.
+        # Values < 0 indicate the move is logistically impossible.
         feasibility = max(0, 1.0 - (total_cost / (fuel_current + 1e-6)))
-# Return fractional feasibility and total fuel cost.
         return feasibility, total_cost
-# Empty line.
 
-# Method to cross-reference Oracle heatmaps with proposed coordinates.
     def evaluate_combat_risk(self, unit_pos, target_pos, red_heatmap, unit_hp):
-# Docstring.
         """
-        Check if moving to target_pos is a 'Death Trap'.
-        Uses the Oracle's Heatmap (probability of enemies being there).
+        Interprets Oracle heatmaps to identify potential 'Killing Zones'.
+        
+        Args:
+            target_pos: The coordinate we are considering moving into.
+            red_heatmap: The Oracle prediction grid (prob. distribution of enemy presence).
+            unit_hp: Current health of the unit (resilience to risk).
         """
-# Extract target coordinates.
         r, c = target_pos
-# Aggregated peril score.
-        # Enemy threat is the sum of probabilities in a 3x3 around the target
+        # Convolutional Risk Scan: Sum the probabilities of threats in the 3x3 immediate vicinity.
+        # This captures both direct and adjacent threat vectors.
         threat_level = 0
-# Perform spatial kernel scan.
         for dr in range(-1, 2):
-# Column scan.
             for dc in range(-1, 2):
-# Calculate neighbor coord.
                 nr, nc = r + dr, c + dc
-# Bound check.
                 if 0 <= nr < self.grid_size and 0 <= nc < self.grid_size:
-# Add Oracle probability to threat level.
+                    # Accumulate spatial probability from the Oracle output.
                     threat_level += red_heatmap[nr, nc]
-# Empty line.
         
-# Cap risk at 100%.
-        # Normalize (threat_level of 1.0 means an enemy is definitely there)
+        # Normalize: A threat level index (0.0 to 1.0).
         risk = min(1.0, threat_level)
-# Empty line.
         
-# Calculate final survival probability based on health and risk.
-        # Survival is high if HP is high and risk is low
+        # Survival Score: A function of physical HP and lack of environmental risk.
+        # Low HP units are more sensitive to high-risk zones.
         survival_score = (unit_hp / 100.0) * (1.0 - risk)
-# Return score and raw risk level.
         return survival_score, risk
-# Empty line.
 
-# Main method to aggregate all tactical factors into a single score.
     def get_maneuver_score(self, unit, target_pos, env_state, red_heatmap):
-# Docstring.
         """
-        Aggregate Feasibility Score (0% to 100%).
+        Aggregates all feasibility signals into a single unified maneuver rank.
+        
+        Returns a dictionary containing the primary 'overall' rank and sub-metrics.
         """
-# Logistics evaluation.
-        # 1. Logistics check
+        # ── Vector 1: Logistics (Can we afford the move?) ──
         f_score, _ = self.calculate_path_cost(unit['pos'], target_pos, env_state['terrain'], unit['fuel'])
-# Empty line.
         
-# Safety evaluation.
-        # 2. Safety check
+        # ── Vector 2: Survival (Will we survive the move?) ──
         s_score, risk = self.evaluate_combat_risk(unit['pos'], target_pos, red_heatmap, unit['hp'])
-# Empty line.
         
-# Spatial advantage evaluation.
-        # 3. Elevation check (moving Upwards is harder)
-# Current height.
+        # ── Vector 3: Vertical Advantage (Is the terrain favorable?) ──
         curr_elev = env_state['elevation'][unit['pos'][0], unit['pos'][1]]
-# Proposed height.
         target_elev = env_state['elevation'][target_pos[0], target_pos[1]]
-# Apply 20% penalty if the move is an uphill climb.
-        elev_penalty = 1.0 if target_elev <= curr_elev else 0.8 # 20% harder to move up
-# Empty line.
+        # Physic simulation: Moving Upwards incurs a 20% penalty to maneuverability.
+        elev_penalty = 1.0 if target_elev <= curr_elev else 0.8
         
-# Final calculation.
-        # Final Weighted Score
-# Weighted sum: 40% Logistics, 50% Survival, 10% Elevation.
+        # ── COMPOSITE SCORING (The Decision Matrix) ──
+        # Final weights: 
+        # - Survival (50%): The prime directive.
+        # - Logistics (40%): Operational endurance.
+        # - Height (10%): Tactical minor advantage.
         total_score = (f_score * 0.4) + (s_score * 0.5) + (elev_penalty * 0.1)
-# Empty line.
         
-# Package all metrics for the Tactical Brain.
         return {
-# Final decision score.
             "overall": total_score,
-# Raw fuel viability.
             "logistics": f_score,
-# Raw survival score.
             "survival": s_score,
-# Raw Oracle threat score.
             "risk": risk
-# End dict.
         }

@@ -1,18 +1,22 @@
-# This is the docstring for the oracle init file detailing its purpose.
+# Initialization for the TDASS Oracle Intelligent Subsystem.
 """
-# The first module, data preprocessing logic.
+# Focus: Predictive adversary behavior analysis and spatial intent forecasting.
 oracle/ — Module 1: Intelligence & Enemy Prediction
-# Separator for the header.
 =====================================================
-# Description of the data loader file.
-  - data_loader.py:       B1 — Data preprocessing & windowed sequences
-# Description of the lstm predictor file.
-  - lstm_predictor.py:    B2 — LSTM movement prediction model
-# Description of the intent classifier file.
-  - intent_classifier.py: B3 — Enemy posture classification
-# Description of the heatmap generator file.
-  - heatmap_generator.py: B4 — Probability heatmaps
-# Description of the training pipeline file.
-  - train_oracle.py:      B5 — Training pipeline
-# End of the docstring.
+# This package encapsulates the neural reasoning layers of the Tactical Decision Support System.
+# It handles the full ML lifecycle from windowed sequence generation to real-time inference.
+
+Core Sub-Modules:
+# B1: Feature Engineering — Sliding window temporal sequencing.
+  - data_loader.py:       Handles CSV parsing and feature normalization.
+# B2: Behavioral Prediction — Recurrent neural architecture.
+  - lstm_predictor.py:    Predicts discrete action sequences (UP, DOWN, FIRE).
+# B3: Strategic Classification — Posture awareness.
+  - intent_classifier.py: Classifies high-level intent (ATTACK, RETREAT).
+# B4: Spatial Forecasting — Probability distribution maps.
+  - heatmap_generator.py: Translates logits into 2D risk heatmaps.
+# B5: MLOps — The training orchestration pipeline.
+  - train_oracle.py:      Manages hardware-accelerated training and checkpointing.
+# B6: Deployment — High-performance inference bridge.
+  - inference_engine.py:  Provides a stateful, rolling-buffer interface for real-time applications.
 """

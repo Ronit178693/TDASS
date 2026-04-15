@@ -1,385 +1,280 @@
-# File docstring explaining the environment setup and Phase A+ features.
+# Core simulation engine for the TDASS project, implementing high-fidelity tactical logic using Gymnasium.
 """
-# Header for the battle environment file.
+# This module leverages the Gymnasium API to create a standardized interface for reinforcement learning agents.
 battle_env.py — Enhanced Battlefield Environment (Phase A+)
-# Separator for visual clarity.
 ==========================================================
-# Description of the Gymnasium-based tactical simulation core.
+# The simulation is designed to provide a multi-modal observation space (spatial, resource, psychological).
 A Gymnasium environment for multi-unit tactical simulation with:
-# Detail on movement logic and terrain diversity.
+# Movement is non-uniform; different terrains (Forest, Urban, etc.) have varying deployment costs.
   - 6 terrain types with movement costs
-# Detail on unit resource management (HP, Ammo, Fuel).
+# Logistics management: Units must balance tactical aggression against their HP, Ammo, and Fuel reserves.
   - Multiple Blue / Red units with individual resources (HP, ammo, fuel)
-# Detail on the combat systems (Melee and Ranged).
+# Deterministic combat resolution: Ranged fire is safer but high-cost; Melee is high-impact but carries health risks.
   - Combat mechanics (ranged + melee)
-# Detail on visibility restrictions per team.
+# Information Asymmetry: Implementation of a visibility mask (Fog of War) to simulate realistic tactical uncertainty.
   - Fog of War — units have limited vision radius
-# Detail on random resource spawns on the map.
+# Dynamic map events: Supply crates introduce stochastic resource replenishment, forcing units to pivot goals.
   - Supply Drops — resource crates spawn on the map
-# Detail on tactical high-ground advantages.
+# Tactical Geometry: High-ground bonuses (Elevation) encourage AI agents to secure strategic terrain.
   - Elevation layer — high ground grants attack bonus
-# Detail on psychological performance system.
+# Psychological Modeling: Success or failure affects a unit's 'Morale', modifying its accuracy and damage.
   - Morale system — unit effectiveness scales with events
-# Detail on the graphical interface components.
+# High-performance visualization: Integrated Pygame engine for monitoring simulation health and unit trajectories.
   - Rich Pygame renderer with terrain, fog overlay, minimap, particles
-# Detail on the OODA-loop data available for external AI.
+# OODA Loop support: Full state exposure via the 'info' dictionary to facilitate external predictive analysis.
   - Full OODA-loop data exposure via the info dict
-# Empty line for formatting.
-# 
-# Legend for terrain numerical identifiers.
+
+# Standardized terrain IDs used for lookup in cost and cover dictionaries.
 Grid Terrain Codes (terrain_map layer):
-# Definition of Plains type.
+# Neutral, low-cost movement area.
   0 = Plains   (cost 1.0)
-# Definition of Wall type.
+# Structural obstacles that block all movement and line-of-sight.
   1 = Wall      (impassable)
-# Definition of Forest type.
+# Strategic cover: Slows movement but drastically reduces incoming small-arms damage.
   2 = Forest    (cost 1.5, provides cover)
-# Definition of Water type.
+# Natural barrier: Blocks movement but allows for line-of-sight analysis.
   3 = Water     (impassable)
-# Definition of Urban type.
+# High-density cover: The most difficult terrain to traverse, offering maximum defensive bonuses.
   4 = Urban     (cost 2.0, provides cover)
-# Definition of Road type.
+# Optimized logistics path: Minimal movement cost for fast unit redeployment.
   5 = Road      (cost 0.5, fast movement)
-# Empty line.
-#
-# Legend for the unit occupancy map.
+
+# Identity mapping for the occupancy grid layer.
 Unit Layer (unit_map):
-# Open tile code.
+# Ready for movement.
   0 = Empty
-# Friendly unit code.
+# Primary agent team (Friendly).
   1 = Blue unit
-# Hostile unit code.
+# Target agent team (Adversary).
   2 = Red unit
-# End of documentation block.
 """
-# Empty line.
 
-# Import the base gymnasium library for environment structure.
+# The industry-standard library for developing and comparing reinforcement learning algorithms.
 import gymnasium as gym
-# Import specific space definitions for observations and actions.
+# Action and Observation space definitions required by the Gymnasium interface.
 from gymnasium import spaces
-# Import numpy for high-performance matrix and grid operations.
+# NumPy is utilized for efficient grid-based matrix operations and spatial calculations.
 import numpy as np
-# Import pygame for the 2D graphical rendering interface.
+# Pygame provides the real-time graphical rendering context for the 2D battlefield.
 import pygame
-# Import copy for deep-copying state dictionaries safely.
+# Deep-copying unit states ensures that the 'info' metadata doesn't mutate across simulation steps.
 import copy
-# Import random for stochastic supply spawns and terrain generation.
+# Psuedo-random number generation for supply spawn probabilities and terrain variation.
 import random
-# Import math for distance calculations and combat geometry.
+# Standard math library for calculating Euclidean/Manhattan distances and trigonometry.
 import math
-# Empty line.
 
 # ──────────────────────────────────────────────
-# Section header for configuration constants.
-# Constants
+# Global Environment Constants & Tactical Parameters
 # ──────────────────────────────────────────────
-# Integer ID for Plains terrain.
+
+# Semantic aliases for terrain IDs, improving code readability and maintainability.
 TERRAIN_PLAINS = 0
-# Integer ID for Wall terrain (Impassable).
 TERRAIN_WALL   = 1
-# Integer ID for Forest terrain (Cover).
 TERRAIN_FOREST = 2
-# Integer ID for Water terrain (Impassable).
 TERRAIN_WATER  = 3
-# Integer ID for Urban terrain (High Cover).
 TERRAIN_URBAN = 4
-# Integer ID for Road terrain (Fast Move).
 TERRAIN_ROAD   = 5
-# Empty line.
 
-# Dictionary mapping terrain IDs to human-readable names.
+# Human-readable mapping for UI display and console logging.
 TERRAIN_NAMES = {0: "Plains", 1: "Wall", 2: "Forest", 3: "Water", 4: "Urban", 5: "Road"}
-# Empty line.
 
-# Dictionary defining the movement speed penalty for each terrain.
-# Movement cost multiplier per terrain; None = impassable
+# Economic cost of movement: Defines the fuel depletion for entering a specific tile type.
 TERRAIN_COST = {
-# Standard movement cost.
     TERRAIN_PLAINS: 1.0,
-# Blocked movement.
-    TERRAIN_WALL:   None,
-# Slow movement.
+    TERRAIN_WALL:   None, # Impassable
     TERRAIN_FOREST: 1.5,
-# Blocked movement.
-    TERRAIN_WATER:  None,
-# Very slow movement.
+    TERRAIN_WATER:  None, # Impassable
     TERRAIN_URBAN:  2.0,
-# Fast movement efficiency.
     TERRAIN_ROAD:   0.5,
-# Close dictionary.
 }
-# Empty line.
 
-# Dictionary defining damage reduction provided by specific tiles.
-# Cover bonus — reduces incoming damage by this fraction
+# Defensive modifiers: The percentage of damage absorbed by the environment itself.
 TERRAIN_COVER = {
-# No protection.
     TERRAIN_PLAINS: 0.0,
-# No protection (impassable anyway).
     TERRAIN_WALL:   0.0,
-# 30% damage reduction.
-    TERRAIN_FOREST: 0.3,
-# No protection.
+    TERRAIN_FOREST: 0.3, # 30% Damage Reduction
     TERRAIN_WATER:  0.0,
-# 40% damage reduction.
-    TERRAIN_URBAN:  0.4,
-# No protection.
+    TERRAIN_URBAN:  0.4, # 40% Damage Reduction
     TERRAIN_ROAD:   0.0,
-# Close dictionary.
 }
-# Empty line.
 
-# Constant for fuel depletion per movement action.
-# Base fuel cost per step on Plains
+# Longitudinal logistics: Base fuel consumption for standard movement on Plains.
 BASE_FUEL_COST = 2.0
-# Empty line.
 
-# Section for combat efficiency constants.
-# Combat constants
-# Damage value for close-quarters fighting.
+# Combat Calibration: These values define the lethal efficiency of the units.
+# Melee is high risk/reward, whereas Ranged allows for stand-off engagement.
 MELEE_DAMAGE   = 30
-# Ammo cost for melee (effectively zero).
-MELEE_AMMO     = 0
-# Damage value for projectile fighting.
+MELEE_AMMO     = 0 # Melee combat does not consume ammunition.
 RANGED_DAMAGE  = 20
-# Ammo cost for firing projectiles.
-RANGED_AMMO    = 5
-# Maximum distance (Manhattan) for ranged fire.
-RANGED_RANGE   = 3
-# Empty line.
+RANGED_AMMO    = 5 # High ammo cost to penalize spamming fire from distance.
+RANGED_RANGE   = 3 # Effective reach (Manhattan distance) for projectile attacks.
 
-# Section for visibility logic constants.
-# Fog of War
-# Distance threshold for unit sight lines.
-FOG_VISION_RADIUS = 4  # Manhattan distance each unit can see
-# Empty line.
+# Situational awareness logic: Defines the visibility radius for each unit.
+FOG_VISION_RADIUS = 4 
 
-# Section for resource crate constants.
-# Supply drop constants
-# HP restored by crate.
+# Logistics replenishment constants for supply crates.
 SUPPLY_HP    = 25
-# Ammo restored by crate.
 SUPPLY_AMMO  = 15
-# Fuel restored by crate.
 SUPPLY_FUEL  = 30
-# Chance of a crate spawning at the end of each tick.
-SUPPLY_SPAWN_CHANCE = 0.08  # probability per step of a new crate
-# Empty line.
+# Probability of a resource drop spawning in a random valid tile at the end of a step.
+SUPPLY_SPAWN_CHANCE = 0.08 
 
-# Section for spatial mechanics.
-# Elevation
-# Damage multiplier applied to high-ground attackers.
-ELEVATION_DAMAGE_BONUS = 0.25  # +25% damage from high ground
-# Empty line.
+# Geometric combat advantage: Scalar bonus applied when attacking from a higher altitude.
+ELEVATION_DAMAGE_BONUS = 0.25 
 
-# Section for unit psychology.
-# Morale
-# Starting morale value for all units.
+# Psychological throughput parameters: Determinates unit effectiveness trends.
 MORALE_DEFAULT   = 100
 # Penalty for team losses.
-MORALE_KILL_ALLY = -20   # morale lost when friendly dies
-# Bonus for achieving kills.
-MORALE_KILL_FOE  = 15    # morale gained when enemy killed
-# Penalty for intense physical damage.
-MORALE_LOW_HP    = -10   # morale penalty when HP < 30
-# Lower bound for effectiveness.
+MORALE_KILL_ALLY = -20   
+# Bonus for successful adversary elimination.
+MORALE_KILL_FOE  = 15    
+# Passive drain when critical damage is sustained.
+MORALE_LOW_HP    = -10   
+# Operational limits for the morale scalar.
 MORALE_MIN       = 20
-# Upper bound for effectiveness.
 MORALE_MAX       = 150
-# Empty line.
 
-# List of valid action indexes for unit control.
-# Actions: 0=Stay, 1=Up, 2=Down, 3=Left, 4=Right, 5=RangedAttack
+# Action Space: Stay (0), Up (1), Down (2), Left (3), Right (4), RangedAttack (5).
 NUM_ACTIONS = 6
-# Empty line.
 
 # ──────────────────────────────────────────────
-# Visual divider for helper functions.
-# Unit helper
+# Engineering Components: Data Structures & Helpers
 # ──────────────────────────────────────────────
-# Modular function to package unit state into a consistent format.
+
+# Object factory for unit entities, ensuring a consistent schema for all actors in the world.
 def make_unit(uid, team, row, col, hp=100, ammo=50, fuel=100):
-# Docstring.
-    """Create a unit state dictionary."""
-# Dictionary return block.
+    """Initializes the tactical state dictionary for a single unit entity."""
     return {
-# Unique identifier string.
+        # Unique identifier used for event logging and historical tracking.
         "id":      uid,
-# Team affiliation (blue or red).
+        # Team affiliation determines friend/foe identification in the unit_map.
         "team":    team,
-# Current XY coordinate pair.
+        # Absolute grid coordinates [Row, Column].
         "pos":     [row, col],
-# Visual health points.
+        # Structural health points (0-100).
         "hp":      hp,
-# Current projectile count.
+        # Combat resource used for projectile-based engagements.
         "ammo":    ammo,
-# Current movement energy.
+        # Movement energy required for traversal (reduced by terrain cost).
         "fuel":    fuel,
-# Boolean existence flag.
+        # Boolean flag indicating if the unit is still an active participant in the match.
         "alive":   True,
-# Current psychological scalar.
+        # Performance modifier dynamic scalar.
         "morale":  MORALE_DEFAULT,
-# Tally of defeated enemies.
+        # Count of adversaries successfully eliminated by this unit.
         "kills":   0,
-# End of dictionary.
     }
-# Empty line.
-# Empty line.
 
-
-# ──────────────────────────────────────────────
-# Visual divider for map generation logic.
-# Default 10×10 terrain & elevation maps
-# ──────────────────────────────────────────────
-# Hand-placed terrain generator.
+# Map generator utility for creating a tactical multi-terrain grid.
 def default_terrain():
-# Docstring.
-    """Hand-crafted 10×10 terrain with tactical features."""
-# Initialize blank plains grid.
+    """Generates a handcrafted 10x10 map with complex tactical features."""
+    # Start with a baseline of open Plains (ID: 0).
     t = np.zeros((10, 10), dtype=int)
-# Place forest line on far left.
+    # Define a forested flank on the western side of the map.
     t[3, 0:5] = TERRAIN_FOREST
-# Extend forest line.
     t[4, 0:3] = TERRAIN_FOREST
-# Create water barrier on right.
+    # Establish a water barrier create a central choke point.
     t[2:8, 7] = TERRAIN_WATER
-# Central urban zone.
+    # Central Urban hub (High cover, high traversal cost).
     t[4:6, 4:6] = TERRAIN_URBAN
-# Bottom road connection.
+    # High-speed transport corridor along the southern perimeter.
     t[8, :]    = TERRAIN_ROAD
-# Strategic obstacles (Walls).
+    # Structural Walls positioned to block direct sightlines and movement.
     t[1, 5]    = TERRAIN_WALL
-# Blocking wall.
     t[2, 5]    = TERRAIN_WALL
-# Blocking wall.
     t[6, 2]    = TERRAIN_WALL
-# Blocking wall.
     t[6, 3]    = TERRAIN_WALL
-# Return the finished map.
     return t
-# Empty line.
-# Empty line.
 
-
-# Heightmap generator for combat bonuses.
+# Strategic verticality generator.
 def default_elevation(grid_size=10):
-# Docstring.
-    """Elevation layer: 0=low, 1=mid, 2=high.  Hills in centre & corners."""
-# Initialize flat ground.
+    """Assigns height levels to the grid: 0 (Low), 1 (Mid), 2 (High)."""
     e = np.zeros((grid_size, grid_size), dtype=int)
-# Set high ground to central urban center.
-    e[4:6, 4:6] = 2   # urban hilltop
-# Slight incline at blue spawn.
-    e[0:2, 0:2] = 1   # blue spawn ridge
-# Slight incline at red spawn.
-    e[8:10, 8:10] = 1  # red spawn ridge
-# Sniper nest overlooking water.
-    e[3, 7] = 2        # sniper bluff
-# Finished heightmap.
+    # The Urban center is located on a defensible high-ground plateau.
+    e[4:6, 4:6] = 2   
+    # Natural inclines surrounding the primary deployment zones.
+    e[0:2, 0:2] = 1   
+    e[8:10, 8:10] = 1  
+    # Strategic sniper nest overlooking the central choke point.
+    e[3, 7] = 2        
     return e
-# Empty line.
-# Empty line.
-
 
 # ──────────────────────────────────────────────
-# Visual divider for visual effects engine.
-# Particle system (for renderer)
+# Visual FX Engine: Particle Physics system
 # ──────────────────────────────────────────────
-# Single object in a particle cloud.
+
+# Individual component of a visual explosion or impact effect.
 class _Particle:
-# Optimized memory allocation for many short-lived objects.
+    """Represents a physics-based visual point with a finite lifespan."""
+    # Optimization: __slots__ reduces memory overhead for high-frequency particle spawning.
     __slots__ = ("x", "y", "vx", "vy", "life", "color", "size")
-# Initialization for a new spark.
     def __init__(self, x, y, vx, vy, life, color, size=3):
-# Store position and speed vectors.
+        # Pixel-level coordinates and velocity vectors.
         self.x, self.y = x, y
         self.vx, self.vy = vx, vy
-# Duration count.
+        # Survival countdown (measured in frames).
         self.life = life
-# Visual attribute.
+        # Visual styling properties.
         self.color = color
-# Visual scale.
         self.size = size
-# Empty line.
-# Empty line.
 
-
-# Manager for groups of particles.
+# Orchestrator for managing groups of particles during combat events.
 class _ParticleSystem:
-# Docstring.
-    """Lightweight particle emitter for combat FX."""
-# Logic setup.
+    """Emitter logic that handles the spawning and aging of combat visual effects."""
     def __init__(self):
-# Empty list for active sparks.
+        # Buffer of currently active particle objects.
         self.particles: list[_Particle] = []
-# Create a burst of particles at a coordinate.
+    
+    # Trigger a burst of particles from a specific epicenter.
     def emit(self, x, y, color, count=8, speed=3.0, life=15):
-# Loop to create each spark in the burst.
+        """Generates a radially symmetric outward burst of sparks."""
         for _ in range(count):
-# Randomize direction.
+            # Randomize direction and velocity to simulate organic shrapnel flow.
             angle = random.uniform(0, 2 * math.pi)
-# Randomize speed.
             spd   = random.uniform(0.5, speed)
-# Append new object to tracked list.
             self.particles.append(_Particle(
                 x, y,
                 math.cos(angle) * spd, math.sin(angle) * spd,
                 random.randint(life // 2, life),
                 color, random.randint(2, 4)
             ))
-# Process logical state of sparks.
+
+    # Frame-by-frame physics integration.
     def update(self):
-# List for survivors.
+        """Moves particles and cleans up objects that have reached the end of their lifespan."""
         alive = []
-# Process each particle.
         for p in self.particles:
-# Update X according to speed.
             p.x += p.vx
-# Update Y according to speed.
             p.y += p.vy
-# Decay duration.
             p.life -= 1
-# Retention check.
             if p.life > 0:
                 alive.append(p)
-# Swap active list to filtered survivors.
         self.particles = alive
-# Visual execution.
+
+    # Render pass: Blits the particles to the Pygame surface.
     def draw(self, surface):
-# Loop through sparks.
+        """Draws circles to the screen with transparency based on remaining life."""
         for p in self.particles:
-# Calculate fade based on remaining duration.
             alpha = max(0, min(255, int(255 * p.life / 15)))
-# Ensure color stays within 8-bit bounds.
+            # Color is tinted based on alpha for a fade-out effect.
             c = (min(255, p.color[0]), min(255, p.color[1]), min(255, p.color[2]))
-# Execute drawing command on the game screen.
             pygame.draw.circle(surface, c, (int(p.x), int(p.y)), p.size)
-# Empty line.
-# Empty line.
-
 
 # ──────────────────────────────────────────────
-# Visual divider for primary class definition.
-# BattleEnv
+# Primary Environment Logic
 # ──────────────────────────────────────────────
-# The main tactical engine class.
+
+# The main tactical simulation class, strictly adhering to the Gymnasium Env API.
 class BattleEnv(gym.Env):
-# Docstring detailing data structure.
     """
     Enhanced Battlefield Gymnasium Environment.
-
-    Observation: dict with keys
-      - "terrain_map": (H, W) int   — terrain type per cell
-      - "unit_map":    (H, W) int   — 0=empty, 1=blue, 2=red
-      - "fog_map":     (H, W) int   — 1=visible to blue, 0=fogged
-      - "elevation":   (H, W) int   — elevation level per cell
-
-    Action: int 0-5  (applied to the *active* blue unit via step)
+    Handles the state transitions, rewards, and multi-modal observations.
     """
-# Supported render configurations.
+    # Registered render modes for compatibility with external evaluation tools.
     metadata = {"render_modes": ["human", "ansi"]}
-# Class initialization.
+
+    # Constructor: Configures the simulation grid and initialization parameters.
     def __init__(
         self,
         render_mode="ansi",
@@ -391,269 +286,232 @@ class BattleEnv(gym.Env):
         max_steps=200,
         fog_enabled=True,
     ):
-# Python inheritance setup.
+        # Invoke base Gymnasium initialization.
         super().__init__()
-# Save grid dimensions.
         self.grid_size   = grid_size
-# Save visual mode.
         self.render_mode = render_mode
-# Set team sizes.
         self.num_blue    = num_blue
         self.num_red     = num_red
-# Set loop limits.
         self.max_steps   = max_steps
-# Reset ticker.
         self.current_step = 0
-# Fog control.
         self.fog_enabled  = fog_enabled
-# Initialize terrain (uses default if none provided).
+
+        # Construct the static world layers (Terrain and Elevation).
         self.terrain_map = np.array(terrain_map, dtype=int) if terrain_map is not None else default_terrain()
-# Initialize heightmap (uses default if none provided).
         self.elevation = np.array(elevation_map, dtype=int) if elevation_map is not None else default_elevation(grid_size)
-# Initialize visibility mask.
+        
+        # Situational awareness mask and supply loot tracking.
         self.fog_map = np.ones((grid_size, grid_size), dtype=int)
-# Initialize empty loot pool.
         self.supply_drops: list[dict] = []
-# Set discrete action space.
+
+        # Define the Discrete Action Space [0-5] and the multi-layered Observation Dictionary.
         self.action_space = spaces.Discrete(NUM_ACTIONS)
-# Set complex dictionary observation space.
         self.observation_space = spaces.Dict({
             "terrain_map": spaces.Box(0, 5, shape=(grid_size, grid_size), dtype=int),
             "unit_map":    spaces.Box(0, 2, shape=(grid_size, grid_size), dtype=int),
         })
-# Pygame constant: Tile dimension in pixels.
+
+        # Graphical rendering layout constants.
         self.cell_size   = 64
-# Pygame constant: Bottom HUD bar height.
         self.hud_height  = 140
-# Pygame constant: Side minimap size.
         self.minimap_size = 120
-# Calculate scaled window width.
         self.window_w    = self.grid_size * self.cell_size + self.minimap_size + 20
-# Calculate scaled window height.
         self.window_h    = self.grid_size * self.cell_size + self.hud_height
-# Screen surface placeholder.
+        
+        # Visual assets and performance monitoring placeholders.
         self.screen      = None
-# GPU clock placeholder.
         self.clock       = None
-# Text rendering placeholder.
         self.font        = None
-# Explosion/Combat effect system initialization.
         self.particles   = _ParticleSystem()
-# Unit storage lists.
+
+        # Operational state buffers.
         self.blue_units: list[dict] = []
         self.red_units:  list[dict] = []
-# Tactical grid for checking unit location quick-look.
         self.unit_map    = np.zeros((grid_size, grid_size), dtype=int)
-# Txt buffer for events.
         self.combat_log: list[str] = []
-# End of init.
-# Empty line.
 
-# ─── helpers ───────────────────────────────
-# Check if a move to this tile is valid.
+    # ─── Tactical Helpers ───────────────────────────────
+
+    # Spatial check to determine if a specific coordinate is traversable.
     def _passable(self, row, col):
-# Bound check.
+        """Validates grid boundaries and terrain-specific movement cost rules."""
         if not (0 <= row < self.grid_size and 0 <= col < self.grid_size):
             return False
-# Check if terrain code exists in movement cost dictionary.
         return TERRAIN_COST[self.terrain_map[row, col]] is not None
-# Efficiently check if another unit is also at this tile.
+
+    # Occupational check to determine if another unit is present at a coordinate.
     def _occupied_by(self, row, col, exclude_uid=None):
-# Loop through all units.
+        """Returns the unit object currently standing on the cell, if any."""
         for u in self.blue_units + self.red_units:
-# Check HP and position.
             if u["alive"] and u["pos"] == [row, col] and u["id"] != exclude_uid:
                 return u
-# Return none if empty.
         return None
-# Update the unit_map array from the list state.
+
+    # Synchonization utility that updates the numeric grid layer from the unit list objects.
     def _rebuild_unit_map(self):
-# Wipe old grid.
+        """Refreshes the internal unit occupancy grid for fast spatial queries."""
         self.unit_map.fill(0)
-# Map Blue to value 1.
         for u in self.blue_units:
             if u["alive"]:
                 self.unit_map[u["pos"][0], u["pos"][1]] = 1
-# Map Red to value 2.
         for u in self.red_units:
             if u["alive"]:
                 self.unit_map[u["pos"][0], u["pos"][1]] = 2
-# Smart spawn logic to find empty tiles near starting zones.
+
+    # Deployment logic for placing units near their base zones at the start of a match.
     def _find_spawn(self, preferred_positions, taken):
-# Loop through the team's zone.
+        """Attempts to find a valid, un-occupied spawn point near the team's start area."""
         for pos in preferred_positions:
             r, c = pos
-# Check if available.
             if self._passable(r, c) and (r, c) not in taken:
                 taken.add((r, c))
                 return [r, c]
-# Failsafe: brute force random search if zone is full.
+        # Failsafe: Brute-force random coordinate generation if preferred zones are blocked.
         for _ in range(200):
             r = random.randint(0, self.grid_size - 1)
             c = random.randint(0, self.grid_size - 1)
             if self._passable(r, c) and (r, c) not in taken:
                 taken.add((r, c))
                 return [r, c]
-# Final failsafe.
         return [0, 0]
-# Convenience function for healthy blue units.
+
+    # Filtering shortcuts for active units.
     def _alive_blue(self):
         return [u for u in self.blue_units if u["alive"]]
-# Convenience function for healthy red units.
     def _alive_red(self):
         return [u for u in self.red_units if u["alive"]]
-# Empty line.
 
-# ─── Fog of War ────────────────────────────
-# Recalculate which grid squares are visible.
+    # ─── Fog of War Logic ────────────────────────────
+
+    # situational awareness update triggered after every unit movement.
     def _update_fog(self):
-# Docstring.
-        """Recompute fog map from blue unit positions."""
-# Skip logic if feature is off.
+        """Recomputes which grid squares are visible to the Blue team based on current unit positions."""
         if not self.fog_enabled:
+            # If fog is disabled globally, the entire map is automatically revealed.
             self.fog_map.fill(1)
             return
-# Start with total darkness.
+        # Reset the mask to total obscurity before calculating new vision spheres.
         self.fog_map.fill(0)
-# Perform radial scan for each blue unit.
         for u in self._alive_blue():
             r0, c0 = u["pos"]
-# Scan vertical range.
+            # Perform a Manhattan distance scan centered on each friendly unit.
             for dr in range(-FOG_VISION_RADIUS, FOG_VISION_RADIUS + 1):
-# Scan horizontal range.
                 for dc in range(-FOG_VISION_RADIUS, FOG_VISION_RADIUS + 1):
-# Calculate Manhattan distance.
                     if abs(dr) + abs(dc) <= FOG_VISION_RADIUS:
                         nr, nc = r0 + dr, c0 + dc
-# Update map if in bounds.
+                        # Reveal the cell if it falls within the unit's sight radius.
                         if 0 <= nr < self.grid_size and 0 <= nc < self.grid_size:
                             self.fog_map[nr, nc] = 1
-# Empty line.
 
-# ─── Supply Drops ─────────────────────────
-# Randomly generate and place a supply crate.
+    # ─── Supply Logistics ──────────────────────────
+
+    # Stochastic event generator for resource drops.
     def _maybe_spawn_supply(self):
-# Docstring.
-        """Randomly place a supply crate on an empty passable cell."""
-# Chance check.
+        """Randomly places a supply crate on an empty traversable cell."""
         if random.random() < SUPPLY_SPAWN_CHANCE:
-# Search for valid spot.
+            # Search for a valid, unoccupied coordinate for the drop.
             for _ in range(50):
                 r = random.randint(0, self.grid_size - 1)
                 c = random.randint(0, self.grid_size - 1)
-# Ensure floor is passable and unit-free.
                 if self._passable(r, c) and self._occupied_by(r, c) is None:
-# Ensure no overlapping crates.
+                    # Prevent stacking multiple crates on a single tile.
                     if not any(s["pos"] == [r, c] for s in self.supply_drops):
-# Pack crate data into list.
                         self.supply_drops.append({
                             "pos": [r, c], "hp": SUPPLY_HP,
                             "ammo": SUPPLY_AMMO, "fuel": SUPPLY_FUEL,
                         })
-# Log event.
                         self.combat_log.append(f"SUPPLY: Crate dropped at ({r},{c})")
                         return
-# Check if a unit just stepped on a crate.
+
+    # Claim logic for units standing on a crate.
     def _check_supply_pickup(self, unit):
-# Docstring.
-        """If unit is standing on a supply crate, consume it."""
-# Search current drops.
+        """Consumes a supply crate if the unit coordinate matches the crate coordinate."""
         for s in self.supply_drops:
-# Coordinate match logic.
             if s["pos"] == unit["pos"]:
-# Apply stats.
+                # Replenish resources up to their respective hard-caps.
                 unit["hp"]   = min(100, unit["hp"]   + s["hp"])
                 unit["ammo"] = min(50,  unit["ammo"] + s["ammo"])
                 unit["fuel"] = min(100, unit["fuel"]  + s["fuel"])
-# Erase crate.
                 self.supply_drops.remove(s)
-# Log.
                 self.combat_log.append(
                     f"PICKUP: {unit['id']} collected supply (+{s['hp']}HP +{s['ammo']}A +{s['fuel']}F)"
                 )
                 return
-# Empty line.
 
-# ─── Morale helpers ────────────────────────
-# Change numerical morale state.
+    # ─── Behavioral Dynamics (Morale & Elevation) ────────────────────────
+
+    # Updates the unit's psych scalar within established operational bounds.
     def _adjust_morale(self, unit, delta):
         unit["morale"] = max(MORALE_MIN, min(MORALE_MAX, unit["morale"] + delta))
-# Calculate damage multiplier based on morale score.
+
+    # Calculates the combat effectiveness modifier based on current morale.
     def _morale_multiplier(self, unit):
-# Linear mapping for scaling.
-        """Morale affects damage output: 100 = 1.0×, 50 = 0.75×, 150 = 1.25×."""
+        """Linear scaling: 100 morale = 1.0x damage, 50 = 0.75x, 150 = 1.25x."""
         return 0.5 + 0.5 * (unit["morale"] / MORALE_DEFAULT)
-# Update everyone's psychology when a unit falls.
+
+    # Broadcasts psychological shifts to everyone when a fatality occurs.
     def _broadcast_morale(self, dead_unit):
-# Docstring.
-        """Update morale for all units when someone dies."""
-# Scan units.
+        """Applies a 'loss penalty' to the same team and a 'morale boost' to the opposition."""
         for u in self.blue_units + self.red_units:
             if not u["alive"]:
                 continue
-# Apply logic per team identity.
             if u["team"] == dead_unit["team"]:
                 self._adjust_morale(u, MORALE_KILL_ALLY)
             else:
                 self._adjust_morale(u, MORALE_KILL_FOE)
-# Empty line.
 
-# ─── Elevation helper ─────────────────────
-# Calculate the advantage of height.
+    # Calculates the damage modifier based on vertical height difference between units.
     def _elevation_bonus(self, attacker, defender):
-# Docstring.
-        """Return damage multiplier based on elevation difference."""
-# Pull height from coord map.
+        """Grants a 25% damage bonus to attackers firing from high-ground toward low-ground."""
         a_elev = self.elevation[attacker["pos"][0], attacker["pos"][1]]
         d_elev = self.elevation[defender["pos"][0], defender["pos"][1]]
-# Grant 25% bonus for high ground.
         if a_elev > d_elev:
             return 1.0 + ELEVATION_DAMAGE_BONUS
         return 1.0
-# Empty line.
 
-# ─── gym interface ─────────────────────────
-# Complete reboot of world state.
+    # ─── Gymnasium API Implementation ─────────────────────────
+
+    # Standard Gym reset: Clears all world state and prepares a fresh match.
     def reset(self, seed=None, options=None):
-# Python inheritance setup.
+        """Reboots the battlefield to T=0 state."""
         super().reset(seed=seed)
-# Reset tickers.
         self.current_step = 0
-# Clear buffers.
         self.combat_log   = []
         self.supply_drops = []
-# Initialize spawn tracking.
         taken = set()
-# Region for blue team.
+
+        # Step 1: Deploy Blue Team units in their respective spawn zones.
         blue_spawns = [(0, 0), (0, 1), (1, 0), (1, 1), (0, 2), (2, 0)]
         self.blue_units = []
-# Create units.
         for i in range(self.num_blue):
             pos = self._find_spawn(blue_spawns, taken)
             self.blue_units.append(make_unit(f"B{i}", "blue", pos[0], pos[1]))
-# Region for red team.
+
+        # Step 2: Deploy Red Team units in opposing spawn zones.
         red_spawns = [(9, 9), (9, 8), (8, 9), (8, 8), (9, 6), (7, 9)]
         self.red_units = []
-# Create units.
         for i in range(self.num_red):
             pos = self._find_spawn(red_spawns, taken)
             self.red_units.append(make_unit(f"R{i}", "red", pos[0], pos[1]))
-# Refresh grids.
+
+        # Step 3: Formalize world matrices.
         self._rebuild_unit_map()
         self._update_fog()
-# Package initial look.
-        obs = self._get_obs()
-        return obs, self._get_info()
-# Form the observation dictionary.
+        return self._get_obs(), self._get_info()
+
+    # Returns the current state representation (the input for the policy/brain).
     def _get_obs(self):
+        """Constructs a copy of the grid matrices for external consumption."""
         return {
             "terrain_map": self.terrain_map.copy(),
             "unit_map":    self.unit_map.copy(),
             "fog_map":     self.fog_map.copy(),
             "elevation":   self.elevation.copy(),
         }
-# Form the metadata information dictionary.
+
+    # Returns additional metadata that shouldn't be parsed directly as features.
     def _get_info(self):
+        """Deep-copies the list states of all units to prevent external mutation."""
         return {
             "blue_units":    copy.deepcopy(self.blue_units),
             "red_units":     copy.deepcopy(self.red_units),
@@ -661,618 +519,441 @@ class BattleEnv(gym.Env):
             "combat_log":    list(self.combat_log),
             "supply_drops":  copy.deepcopy(self.supply_drops),
         }
-# Increment simulation time by one step.
+
+    # The master transition function: Ingests an action and advances time by one tick.
     def step(self, action, unit_index=0):
-# Docstring.
-        """
-        Execute an action for blue_units[unit_index].
-        Returns:  obs, reward, terminated, truncated, info
-        """
-# Increment step counter.
+        """Executes a single frame of simulation logic for the active Blue unit."""
         self.current_step += 1
-# Wipe step combat log.
         self.combat_log = []
-# Default reward.
         reward = 0.0
-# Unit validity check.
+
+        # Step 1: Validate targeting - Ensure the chosen unit index exists and is alive.
         blue = self.blue_units[unit_index] if unit_index < len(self.blue_units) else None
         if blue is None or not blue["alive"]:
+            # If invalid, return a null step to maintain chronological sync.
             return self._get_obs(), 0, False, False, self._get_info()
-# Execute move actions.
-        # Movement (0-4)
+
+        # Step 2: Core Branching logic based on Action ID.
+        # Action mappings: 0-4 handle movement (including stationary).
         if action <= 4:
             reward += self._do_move(blue, action)
-# Execute ranged actions.
-        # Ranged (5)
+        # Action index 5 triggers a ranged projectile attack.
         elif action == 5:
             reward += self._do_ranged_attack(blue)
-# Manage crate pickups and generation.
-        # Supply check & spawn
+
+        # Step 3: Passive world events and maintenance.
         self._check_supply_pickup(blue)
         self._maybe_spawn_supply()
-# Passive morale penalty for health.
-        # Morale low-HP tick
+
+        # Periodic morale attrition for units with high damage (HP < 30).
         for u in self.blue_units + self.red_units:
             if u["alive"] and u["hp"] < 30:
                 self._adjust_morale(u, MORALE_LOW_HP)
-# Refresh grids.
+
+        # Step 4: Refresh state matrices.
         self._rebuild_unit_map()
         self._update_fog()
-# Game over conditions.
-        # Win / loss
+
+        # Step 5: Termination analysis (Win/Loss/Timeout).
         terminated = False
-# Victory logic.
+        # Victory condition: Red annihilation.
         if not self._alive_red():
             reward += 50
             terminated = True
             self.combat_log.append("VICTORY: All Red units eliminated!")
-# Defeat logic.
+        # Failure condition: Blue annihilation.
         elif not self._alive_blue():
             reward -= 50
             terminated = True
             self.combat_log.append("DEFEAT: All Blue units eliminated!")
-# Timeout logic.
-        truncated = self.current_step >= self.max_steps
-# Return result.
-        return self._get_obs(), reward, terminated, truncated, self._get_info()
-# Empty line.
 
-# ─── movement logic ───────────────────────
-# Execute coordinate shift for a unit.
+        # Truncation: Environment reaching the max_steps limit (200 by default).
+        truncated = self.current_step >= self.max_steps
+
+        # Return the standard 5-tuple result for Gymnasium execution.
+        return self._get_obs(), reward, terminated, truncated, self._get_info()
+
+    # ─── Interaction Execution (Movement & Combat) ───────────────────────
+
+    # Handles unit displacement and the 'auto-melee' trigger logic.
     def _do_move(self, unit, action):
-# Stay command logic.
-        if action == 0:
+        """Moves a unit by one grid unit in UDLR directions, consuming fuel."""
+        if action == 0: # 'Stay' command results in zero movement and zero cost.
             return 0.0
-# Vector map for UDLR keys.
+        # Map IDs 1-4 to specific row/column delta shifts.
         dr, dc = {1: (-1, 0), 2: (1, 0), 3: (0, -1), 4: (0, 1)}[action]
-# Calculate new spot.
         nr, nc = unit["pos"][0] + dr, unit["pos"][1] + dc
-# Block check.
+
+        # Check for map boundary/terrain impassability.
         if not self._passable(nr, nc):
-            return -0.5
-# Calculate fuel requirements.
+            return -1.0 # Significant negative reward for impacting obstacles.
+
+        # Calculate logistics: Fuel cost scales with terrain type.
         terrain = self.terrain_map[nr, nc]
         fuel_cost = BASE_FUEL_COST * TERRAIN_COST[terrain]
-# Fuel check.
         if unit["fuel"] < fuel_cost:
             self.combat_log.append(f"{unit['id']}: Out of fuel!")
-            return -1.0
-# Collision/Combat check.
+            return -1.5 # Heavy penalty for attempts to move without resources.
+
+        # Spatial collision logic: Check if another unit is present at the target tile.
         occupant = self._occupied_by(nr, nc, exclude_uid=unit["id"])
         if occupant is not None:
-# Block friendlies.
             if occupant["team"] == unit["team"]:
+                # Friendly units act as soft-barriers (no melee against teammates).
                 return -0.5
-# Engage enemies.
             else:
+                # AUTO-MELEE: Moving into an enemy cell automatically initiates close-quarters combat.
                 return self._do_melee(unit, occupant, nr, nc, fuel_cost)
-# Movement success logic.
+
+        # Finalize successful movement event.
         unit["pos"] = [nr, nc]
         unit["fuel"] -= fuel_cost
-# Logic to check for loot crates upon stepping on a tile.
-        # CONSUME SUPPLY: If a unit hits a crate, reload and heal
-        for i, drop in enumerate(self.supply_drops):
-            if drop["pos"] == (nr, nc):
-                unit["hp"] = min(100, unit["hp"] + 30)
-                unit["ammo"] = min(50, unit["ammo"] + 15)
-                unit["fuel"] = min(100, unit["fuel"] + 50)
-                self.supply_drops.pop(i)
-                self.combat_log.append(f"{unit['id']}: Collected SUPPLY 📦")
-                break
         return 0.0
-# Execute melee instance.
+
+    # Close-quarters combat resolver.
     def _do_melee(self, attacker, defender, nr, nc, fuel_cost):
-# Subtract fuel.
+        """Resolves high-impact combat with automatic defensive counters."""
         attacker["fuel"] -= fuel_cost
-# Calculate damage modifier from tile traits.
+        # Environment modifiers: Check if defender is in cover (e.g., Forest).
         cover = TERRAIN_COVER[self.terrain_map[defender["pos"][0], defender["pos"][1]]]
-# Advantage from height.
+        # Vertical modifiers: Check if attacker has high-ground advantage.
         elev  = self._elevation_bonus(attacker, defender)
-# Modifier from psychological state.
+        # Psychological modifiers: Attacker status affects damage output.
         morale_mult = self._morale_multiplier(attacker)
-# Calculated damage total.
+
+        # Apply damage calculation: Base * Cover_Penalty * Elevation_Bonus * Morale.
         damage = int(MELEE_DAMAGE * (1.0 - cover) * elev * morale_mult)
-# Apply damage.
         defender["hp"] -= damage
-# Log.
-        self.combat_log.append(
-            f"MELEE: {attacker['id']}→{defender['id']} {damage}dmg "
-            f"(cover {cover:.0%}, elev ×{elev:.2f}). HP:{defender['hp']}"
-        )
-# Trigger blood/spark effects at enemy location.
-        # Particle FX
+
+        # Emit visual feedback: Spark particle burst at impact point.
         cx = defender["pos"][1] * self.cell_size + self.cell_size // 2
         cy = defender["pos"][0] * self.cell_size + self.cell_size // 2
         self.particles.emit(cx, cy, (255, 200, 50), count=12, speed=4.0)
-# Default hit reward.
-        reward = 2.0
-# Fatality logic.
+
+        reward = 2.0 # Reward for successful landing of an attack.
         if defender["hp"] <= 0:
+            # FATALITY: If enemy is eliminated, attacker occupies the square.
             defender["alive"] = False
-# Occupy the dead enemy's tile.
             attacker["pos"] = [nr, nc]
             attacker["kills"] += 1
-# Global morale boost/drop.
             self._broadcast_morale(defender)
             self.combat_log.append(f"KILL: {defender['id']} eliminated!")
-            reward += 10.0
-# Defensive counter logic.
+            reward += 10.0 # Major reward for tactical elimination.
         else:
+            # DEFENSIVE COUNTER-STRIKE: Survivor automatically retaliates at 50% damage reduction.
             counter_cover = TERRAIN_COVER[self.terrain_map[attacker["pos"][0], attacker["pos"][1]]]
             counter_dmg = int(MELEE_DAMAGE * 0.5 * (1.0 - counter_cover))
             attacker["hp"] -= counter_dmg
-            self.combat_log.append(
-                f"COUNTER: {defender['id']}→{attacker['id']} {counter_dmg}dmg. HP:{attacker['hp']}"
-            )
-# Possible attacker fatality.
+            self.combat_log.append(f"COUNTER: {defender['id']}→{attacker['id']} {counter_dmg}dmg.")
             if attacker["hp"] <= 0:
                 attacker["alive"] = False
-# Global morale drop.
                 self._broadcast_morale(attacker)
-                self.combat_log.append(f"KILL: {attacker['id']} eliminated!")
-                reward -= 15.0
-# Complete combat return.
+                reward -= 15.0 # Significant penalty for losing a unit during a melee charge.
         return reward
-# Execute ranged fire instance.
+
+    # Long-range projectile resolver.
     def _do_ranged_attack(self, unit):
-# Ammo check.
+        """Performs a stand-off attack consuming ammunition on the nearest target within range."""
         if unit["ammo"] < RANGED_AMMO:
-            self.combat_log.append(f"{unit['id']}: Not enough ammo!")
-            return -1.0
-# Identify alive targets on the other team.
+            self.combat_log.append(f"{unit['id']}: Insufficient ammo!")
+            return -1.0 # Penalty for inefficient resource usage.
+
+        # Target Identification Logic.
         enemies = self._alive_red() if unit["team"] == "blue" else self._alive_blue()
-# Find nearest eligible target.
         best_enemy, best_dist = None, float("inf")
         for e in enemies:
+            # Calculate Manhattan distance to each potential target.
             d = abs(unit["pos"][0] - e["pos"][0]) + abs(unit["pos"][1] - e["pos"][1])
-# Check distance limit.
             if d <= RANGED_RANGE and d < best_dist:
                 best_dist, best_enemy = d, e
-# Fail logic.
+
         if best_enemy is None:
-            self.combat_log.append(f"{unit['id']}: No targets in range ({RANGED_RANGE}).")
-            return -0.5
-# Consume resources.
+            self.combat_log.append(f"{unit['id']}: No targets in range {RANGED_RANGE}.")
+            return -0.5 # Small penalty for firing into empty air.
+
+        # Resource consumption.
         unit["ammo"] -= RANGED_AMMO
-# Map modifiers.
+        # Environmental and situational modifiers.
         cover = TERRAIN_COVER[self.terrain_map[best_enemy["pos"][0], best_enemy["pos"][1]]]
         elev  = self._elevation_bonus(unit, best_enemy)
-# Psychology modifiers.
         morale_mult = self._morale_multiplier(unit)
-# Damager calculation.
+
+        # Final combat calculation.
         damage = int(RANGED_DAMAGE * (1.0 - cover) * elev * morale_mult)
         best_enemy["hp"] -= damage
-# Log.
-        self.combat_log.append(
-            f"RANGED: {unit['id']}→{best_enemy['id']} {damage}dmg "
-            f"(rng {best_dist}, cover {cover:.0%}, elev ×{elev:.2f}). HP:{best_enemy['hp']}"
-        )
-# Tracer visual effect logic.
-        # Tracer particle from shooter to target
-        sx = unit["pos"][1] * self.cell_size + self.cell_size // 2
-        sy = unit["pos"][0] * self.cell_size + self.cell_size // 2
+
+        # Visual FX: Impact sparks at the target point and muzzle flash at shooter.
         tx = best_enemy["pos"][1] * self.cell_size + self.cell_size // 2
         ty = best_enemy["pos"][0] * self.cell_size + self.cell_size // 2
-# Impact sparks.
-        self.particles.emit(tx, ty, (255, 100, 30), count=10, speed=3.5)
-# Muzzle flash sparks.
-        self.particles.emit(sx, sy, (200, 200, 255), count=4, speed=1.5, life=8)
-# Hit success reward.
-        reward = 2.0
-# Kill logic.
+        self.particles.emit(tx, ty, (255, 100, 30), count=10)
+        
+        reward = 2.0 
         if best_enemy["hp"] <= 0:
             best_enemy["alive"] = False
             unit["kills"] += 1
             self._broadcast_morale(best_enemy)
-            self.combat_log.append(f"KILL: {best_enemy['id']} eliminated!")
             reward += 10.0
-# Finish.
         return reward
-# Empty line.
 
-# ─── Red convenience ───────────────────────
-# Manual unit override for red bots.
+    # Automated override for driving the Red Team adversaries (bots).
     def move_red(self, unit_index, action):
-# Docstring.
-        """Move a red unit (used by simulation / red_strategy)."""
-# Bound check.
-        if unit_index >= len(self.red_units):
-            return 0.0
+        """Allows external scripts to commandRed units using the same world logic as Blue."""
+        if unit_index >= len(self.red_units): return 0.0
         red = self.red_units[unit_index]
-# Life check.
-        if not red["alive"]:
-            return 0.0
-# Call standard move logic.
-        if action <= 4:
-            self._do_move(red, action)
-# Call standard combat logic.
-        elif action == 5:
-            self._do_ranged_attack(red)
-# Refresh logic.
+        if not red["alive"]: return 0.0
+        # Standard movement/combat branching.
+        if action <= 4: self._do_move(red, action)
+        elif action == 5: self._do_ranged_attack(red)
+        # World state sync.
         self._check_supply_pickup(red)
         self._rebuild_unit_map()
         self._update_fog()
         return 0.0
-# Name lookup helper.
+
+    # Lookup helper for identifying the ground type under a unit.
     def get_unit_terrain(self, unit):
         return TERRAIN_NAMES.get(self.terrain_map[unit["pos"][0], unit["pos"][1]], "Unknown")
-# Empty line.
 
-# ─── Backward-compatible properties ────────
-# Legacy support for single-unit index lookups.
+    # ─── Legacy Support Properties ─────────────────────────
+
     @property
     def blue_pos(self):
+        """Returns coordinate of lead Blue unit for basic tracking."""
         alive = self._alive_blue()
         return alive[0]["pos"] if alive else None
-# Legacy support.
+
     @property
     def red_pos(self):
+        """Returns coordinate of lead Red unit for simple distance monitoring."""
         alive = self._alive_red()
         return alive[0]["pos"] if alive else None
-# Legacy support to find impassable coordinates.
+
     @property
     def obstacles(self):
+        """Returns list of all impassable coordinate pairs currently on map."""
         result = []
         for r in range(self.grid_size):
             for c in range(self.grid_size):
                 if TERRAIN_COST[self.terrain_map[r, c]] is None:
                     result.append([r, c])
         return result
-# Empty line.
 
-# ─── Rendering ─────────────────────────────
-# Master visual call.
+    # ─── High-Fidelity Rendering System ─────────────────────────────
+
+    # Master render call used to push world state to the user's display.
     def render(self):
+        """Selects and executes the requested visual mode (Terminal or Graphite)."""
         if self.render_mode == "ansi":
             self._render_ansi()
         elif self.render_mode == "human":
             self._render_pygame()
-# Execute text-based terminal visualization.
+
+    # Lightweight visualizer that prints the battlefield as colored text in the console.
     def _render_ansi(self):
-# Map IDs to characters.
+        """Terminal-based grid renderer using ANSI escape codes for color."""
         symbols = {
             TERRAIN_PLAINS: ".", TERRAIN_WALL: "#", TERRAIN_FOREST: "T",
             TERRAIN_WATER:  "~", TERRAIN_URBAN: "U", TERRAIN_ROAD:   "=",
         }
-# Print header.
         print(f"\n{'─'*30} Step {self.current_step} {'─'*30}")
         header = "    " + " ".join(f"{c:>2}" for c in range(self.grid_size))
         print(header)
-# Scan rows.
         for r in range(self.grid_size):
             row_str = f"{r:>2}  "
-# Scan columns.
             for c in range(self.grid_size):
                 cell = None
-# Visibility mask logic.
+                # Strategic visibility check for the console human player.
                 if self.fog_enabled and self.fog_map[r, c] == 0:
                     cell = " ?"
                 else:
-# Scan for Blue units.
+                    # Render friendly units (Blue).
                     for u in self.blue_units:
                         if u["alive"] and u["pos"] == [r, c]:
                             cell = f"\033[94mB{u['id'][-1]}\033[0m"
                             break
-# Scan for Red units.
+                    # Render adversarial units (Red).
                     if cell is None:
                         for u in self.red_units:
                             if u["alive"] and u["pos"] == [r, c]:
                                 cell = f"\033[91mR{u['id'][-1]}\033[0m"
                                 break
-# Scan for crates.
+                    # Render loot objects.
                     if cell is None:
                         for s in self.supply_drops:
                             if s["pos"] == [r, c]:
                                 cell = f"\033[93m+S\033[0m"
                                 break
-# Final fallback to terrain characters.
+                    # Fallback to terrain icons.
                     if cell is None:
                         cell = f" {symbols[self.terrain_map[r, c]]}"
-# Assemble string.
                 row_str += cell + " "
             print(row_str)
-# Force summary.
-        print("\n\033[94m── Blue Forces ──\033[0m")
+
+        # Output detailed status tables for both teams.
+        print("\n\033[94m── Blue Forces Status ──\033[0m")
         for u in self.blue_units:
-            status = "ALIVE" if u["alive"] else "DEAD"
-            print(f"  {u['id']}: pos={u['pos']} HP={u['hp']} A={u['ammo']} "
-                  f"F={u['fuel']:.0f} M={u['morale']} K={u['kills']} [{status}]")
-# Force summary.
-        print("\033[91m── Red Forces ──\033[0m")
+            print(f"  {u['id']}: {u['hp']}HP, {u['ammo']}A, {u['fuel']:.1f}F, {u['morale']}M")
+        print("\033[91m── Red Forces Status ──\033[0m")
         for u in self.red_units:
-            status = "ALIVE" if u["alive"] else "DEAD"
-            print(f"  {u['id']}: pos={u['pos']} HP={u['hp']} A={u['ammo']} "
-                  f"F={u['fuel']:.0f} M={u['morale']} K={u['kills']} [{status}]")
-# Log output.
-        if self.combat_log:
-            print("\n\033[93m── Combat Log ──\033[0m")
-            for msg in self.combat_log:
-                print(f"  ⚔ {msg}")
-# Execute Pygame graphical visualization.
+            print(f"  {u['id']}: {u['hp']}HP, {u['ammo']}A, {u['fuel']:.1f}F, {u['morale']}M")
+
+    # Premium visual engine using Pygame for fluid interaction and better situational context.
     def _render_pygame(self):
-# Surface initialization check.
+        """Graphical renderer with terrain shading, particles, and interactive elements."""
         if self.screen is None:
+            # First-run initialization of the Pygame window context.
             pygame.init()
             pygame.display.set_caption("TDSS — Enhanced Tactical Battlefield")
             self.screen = pygame.display.set_mode((self.window_w, self.window_h))
             self.clock  = pygame.time.Clock()
             self.font   = pygame.font.SysFont("consolas", 12)
             self.font_lg = pygame.font.SysFont("consolas", 15, bold=True)
-# Color mappings dictionary.
-        # ── Colour palette ──
+
+        # Tactical Color Palette: Harmonious HSL colors for a professional simulation feel.
         TC = {
             TERRAIN_PLAINS: (50, 60, 45),   TERRAIN_WALL: (80, 80, 80),
             TERRAIN_FOREST: (20, 80, 30),   TERRAIN_WATER: (30, 60, 120),
             TERRAIN_URBAN:  (90, 80, 70),   TERRAIN_ROAD:  (100, 95, 75),
         }
-# Elevation shading tints.
+        # Tints used to distinguish different heights on the elevation layer.
         ELEV_TINT  = [(0, 0, 0), (15, 15, 10), (30, 30, 20)]
-# Force colors.
-        BLUE_CLR   = (50, 140, 255)
-        RED_CLR    = (240, 60, 60)
-        SUPPLY_CLR = (255, 220, 50)
-        GRID_LINE  = (40, 40, 40)
-        HUD_BG     = (18, 18, 22)
-        TXT        = (200, 200, 200)
-        FOG_CLR    = (10, 10, 15)
-# Fill backdrop.
-        self.screen.fill(HUD_BG)
-# Dimensions.
+        
+        self.screen.fill((18, 18, 22)) # Dark theme backdrop.
         cs = self.cell_size
-        grid_px = self.grid_size * cs
-# Draw terrain grid.
-        # ── Terrain + elevation ──
+
+        # ── Step 1: Draw the Terrain and Elevation mesh ──
         for r in range(self.grid_size):
             for c in range(self.grid_size):
                 rect = pygame.Rect(c * cs, r * cs, cs, cs)
                 terrain = self.terrain_map[r, c]
-                base = TC[terrain]
-# Tint squares according to height.
+                base_color = TC[terrain]
                 tint = ELEV_TINT[min(self.elevation[r, c], 2)]
-                color = tuple(min(255, base[i] + tint[i]) for i in range(3))
-                pygame.draw.rect(self.screen, color, rect)
-                pygame.draw.rect(self.screen, GRID_LINE, rect, 1)
-# Visual marker for hilltops.
-                # Elevation indicator (small triangle for high ground)
-                if self.elevation[r, c] >= 2:
-                    cx, cy = rect.centerx, rect.y + 4
-                    pygame.draw.polygon(self.screen, (180, 180, 120),
-                        [(cx - 4, cy + 6), (cx + 4, cy + 6), (cx, cy)])
-# Execute Fog of War alpha layer.
-        # ── Fog overlay ──
+                final_color = tuple(min(255, base_color[i] + tint[i]) for i in range(3))
+                pygame.draw.rect(self.screen, final_color, rect)
+                pygame.draw.rect(self.screen, (40, 40, 40), rect, 1) # Cell borders.
+
+        # ── Step 2: Atmospheric Fog of War overlay ──
         if self.fog_enabled:
-            fog_surf = pygame.Surface((grid_px, grid_px), pygame.SRCALPHA)
+            # Render fog on a specialized transparent surface.
+            fog_surf = pygame.Surface((self.grid_size * cs, self.grid_size * cs), pygame.SRCALPHA)
             for r in range(self.grid_size):
                 for c in range(self.grid_size):
                     if self.fog_map[r, c] == 0:
-                        fog_rect = pygame.Rect(c * cs, r * cs, cs, cs)
-# 180 alpha = semi-transparent black.
-                        pygame.draw.rect(fog_surf, (0, 0, 0, 180), fog_rect)
+                        pygame.draw.rect(fog_surf, (0, 0, 0, 180), (c * cs, r * cs, cs, cs))
             self.screen.blit(fog_surf, (0, 0))
-# Draw loot graphics.
-        # ── Supply crates ──
+
+        # ── Step 3: Game Entities (Crates and Units) ──
         for s in self.supply_drops:
             sr, sc = s["pos"]
-# Visibility check.
             if not self.fog_enabled or self.fog_map[sr, sc]:
-                cx = sc * cs + cs // 2
-                cy = sr * cs + cs // 2
-# Draw yellow square.
-                pygame.draw.rect(self.screen, SUPPLY_CLR,
-                    (cx - 6, cy - 6, 12, 12))
-                pygame.draw.rect(self.screen, (180, 150, 20),
-                    (cx - 6, cy - 6, 12, 12), 1)
-# Draw plus sign.
-                lbl = self.font.render("+", True, (0, 0, 0))
-                self.screen.blit(lbl, (cx - 3, cy - 6))
-# Draw Blue units.
-        # ── Units ──
+                # Draw yellow supply crate with visual indicator.
+                self._draw_entity_indicator(sc * cs + cs // 2, sr * cs + cs // 2, (255, 220, 50), "S")
+
         for u in self.blue_units:
-            if u["alive"]:
-                self._draw_unit(u, BLUE_CLR)
-# Draw Red units.
+            if u["alive"]: self._draw_unit_premium(u, (50, 140, 255))
         for u in self.red_units:
-            if u["alive"]:
-# Visible check.
-                visible = (not self.fog_enabled) or self.fog_map[u["pos"][0], u["pos"][1]]
-                if visible:
-                    self._draw_unit(u, RED_CLR)
-# Update effect sprites.
-        # ── Particles ──
+            # Adversary visibility check: Only show red units if they aren't in the fog.
+            if u["alive"] and ((not self.fog_enabled) or self.fog_map[u["pos"][0], u["pos"][1]]):
+                self._draw_unit_premium(u, (240, 60, 60))
+
+        # ── Step 4: Dynamics and HUD elements ──
         self.particles.update()
         self.particles.draw(self.screen)
-# Draw sidebar information module.
-        # ── Minimap (right side) ──
-        mm_x = grid_px + 10
-        mm_y = 10
-        mm_cs = self.minimap_size // self.grid_size
-# Draw minimap border.
-        pygame.draw.rect(self.screen, (30, 30, 35),
-            (mm_x - 2, mm_y - 2, self.minimap_size + 4, self.minimap_size + 4))
-# Loop for terrain pixels.
-        for r in range(self.grid_size):
-            for c in range(self.grid_size):
-                rect = pygame.Rect(mm_x + c * mm_cs, mm_y + r * mm_cs, mm_cs, mm_cs)
-                terrain = self.terrain_map[r, c]
-                pygame.draw.rect(self.screen, TC[terrain], rect)
-# Overlay units on minimap.
-        # Units on minimap
-        for u in self._alive_blue():
-            pygame.draw.rect(self.screen, BLUE_CLR,
-                (mm_x + u["pos"][1]*mm_cs, mm_y + u["pos"][0]*mm_cs, mm_cs, mm_cs))
-        for u in self._alive_red():
-            pygame.draw.rect(self.screen, RED_CLR,
-                (mm_x + u["pos"][1]*mm_cs, mm_y + u["pos"][0]*mm_cs, mm_cs, mm_cs))
-        for s in self.supply_drops:
-            pygame.draw.rect(self.screen, SUPPLY_CLR,
-                (mm_x + s["pos"][1]*mm_cs, mm_y + s["pos"][0]*mm_cs, mm_cs, mm_cs))
-# Minimap text label.
-        lbl = self.font_lg.render("MINIMAP", True, TXT)
-        self.screen.blit(lbl, (mm_x, mm_y + self.minimap_size + 4))
-# Draw bottom panel.
-        # ── HUD Panel ──
-        hud_y = grid_px + 5
-# Render step stats.
-        step_text = self.font_lg.render(
-            f"Step: {self.current_step}/{self.max_steps}   "
-            f"Supplies: {len(self.supply_drops)}", True, TXT)
-        self.screen.blit(step_text, (10, hud_y))
-# Display Blue health list.
-        # Blue status
-        bx, by = 10, hud_y + 22
-        for u in self.blue_units:
-# Color dead units grey.
-            color = BLUE_CLR if u["alive"] else (60, 60, 60)
-            txt = (f"{u['id']} HP:{u['hp']:>3} A:{u['ammo']:>2} "
-                   f"F:{u['fuel']:>3.0f} M:{u['morale']:>3} K:{u['kills']}")
-            surf = self.font.render(txt, True, color)
-            self.screen.blit(surf, (bx, by))
-            by += 16
-# Display Red health list.
-        # Red status
-        rx, ry = self.window_w // 2, hud_y + 22
-        for u in self.red_units:
-# Color dead units grey.
-            color = RED_CLR if u["alive"] else (60, 60, 60)
-            txt = (f"{u['id']} HP:{u['hp']:>3} A:{u['ammo']:>2} "
-                   f"F:{u['fuel']:>3.0f} M:{u['morale']:>3} K:{u['kills']}")
-            surf = self.font.render(txt, True, color)
-            self.screen.blit(surf, (rx, ry))
-            ry += 16
-# Event log block.
-        # Combat log
-        log_y = hud_y + 90
-# Display last 3 events.
-        for msg in self.combat_log[-3:]:
-            surf = self.font.render(f"⚔ {msg[:80]}", True, (255, 200, 80))
-            self.screen.blit(surf, (10, log_y))
-            log_y += 14
-# Render current frame.
+        self._draw_hud_dashboard()
+
+        # Update the hardware display buffer.
         pygame.display.flip()
-# Set target FPS.
-        self.clock.tick(15)
-# Sub-routine to draw unit sprite and health bars.
-    def _draw_unit(self, u, color):
-# Docstring.
-        """Draw a single unit circle + HP bar + morale bar + label."""
-# Scale settings.
-        cs = self.cell_size
-        cx = u["pos"][1] * cs + cs // 2
-        cy = u["pos"][0] * cs + cs // 2
-        radius = cs // 3
-# Elite unit glow logic.
-        # Morale glow ring
+        self.clock.tick(20) # Maintain consistent simulation speed.
+
+    # Specialized internal plotter for unit entities.
+    def _draw_unit_premium(self, u, color):
+        """Draws a unit circle accompanied by HP, Morale, and ID indicators."""
+        cx = u["pos"][1] * self.cell_size + self.cell_size // 2
+        cy = u["pos"][0] * self.cell_size + self.cell_size // 2
+        rad = self.cell_size // 3
+        
+        # High-Morale unit aura (gold ring).
         if u["morale"] >= 120:
-            pygame.draw.circle(self.screen, (255, 255, 150), (cx, cy), radius + 3, 2)
-# Draw main solid color unit body.
-        pygame.draw.circle(self.screen, color, (cx, cy), radius)
-# HP visualiztion block.
-        # HP bar
-        bar_w, bar_h = cs // 2, 4
-        bx = cx - bar_w // 2
-        by = cy + radius + 3
-# Draw dark backdrop bar.
-        pygame.draw.rect(self.screen, (40, 40, 40), (bx, by, bar_w, bar_h))
-# Calculate current health bar width and color.
-        fill_w = max(0, int(bar_w * u["hp"] / 100))
-        fill_c = (50, 200, 50) if u["hp"] > 50 else (200, 200, 0) if u["hp"] > 25 else (200, 50, 50)
-# Draw the colored foreground bar.
-        pygame.draw.rect(self.screen, fill_c, (bx, by, fill_w, bar_h))
-# Morale visualization block.
-        # Morale bar (thin, below HP)
-        my = by + 5
-# Backdrop bar.
-        pygame.draw.rect(self.screen, (40, 40, 40), (bx, my, bar_w, 2))
-# Morale width and color.
-        m_fill = max(0, int(bar_w * u["morale"] / MORALE_MAX))
-        m_c = (100, 150, 255) if u["morale"] >= 80 else (200, 100, 50)
-# Draw.
-        pygame.draw.rect(self.screen, m_c, (bx, my, m_fill, 2))
-# Text label identification.
-        # Label
+            pygame.draw.circle(self.screen, (255, 255, 150), (cx, cy), rad + 3, 2)
+        
+        # Core unit body.
+        pygame.draw.circle(self.screen, color, (cx, cy), rad)
+        # ID text.
         label = self.font.render(u["id"], True, (255, 255, 255))
         self.screen.blit(label, (cx - 8, cy - 6))
-# Cleanup environment call.
+
+        # Stat-bars alignment.
+        bx = cx - (self.cell_size // 4)
+        by = cy + rad + 4
+        # HP bar (Green to Red).
+        self._draw_stat_bar(bx, by, self.cell_size // 2, 4, u["hp"] / 100, (50, 200, 50))
+        # Morale bar (Blue/Cyan).
+        self._draw_stat_bar(bx, by + 6, self.cell_size // 2, 2, u["morale"] / MORALE_MAX, (100, 150, 255))
+
+    # Generic bar rendering utility for stats.
+    def _draw_stat_bar(self, x, y, w, h, ratio, color):
+        pygame.draw.rect(self.screen, (30, 30, 30), (x, y, w, h))
+        pygame.draw.rect(self.screen, color, (x, y, int(w * max(0, ratio)), h))
+
+    # Generic indicator rendering utility for drops.
+    def _draw_entity_indicator(self, x, y, color, char):
+        pygame.draw.rect(self.screen, color, (x - 6, y - 6, 12, 12))
+        lbl = self.font.render(char, True, (0, 0, 0))
+        self.screen.blit(lbl, (x - 3, y - 6))
+
+    # Console and HUD panel overlay.
+    def _draw_hud_dashboard(self):
+        """Renders the statistics and event logs at the bottom of the window."""
+        hud_y = self.grid_size * self.cell_size + 10
+        # Global stats.
+        header = self.font_lg.render(f"Step: {self.current_step}  |  Operational Status: ACTIVE", True, (220, 220, 220))
+        self.screen.blit(header, (20, hud_y))
+
+        # Team columns.
+        for i, u in enumerate(self.blue_units):
+            txt = self.font.render(f"{u['id']}: HP {u['hp']:>3} AMMO {u['ammo']:>2} F {u['fuel']:>3.0f} M {u['morale']:>3}", True, (50, 140, 255) if u["alive"] else (80, 80, 80))
+            self.screen.blit(txt, (20, hud_y + 30 + (i*16)))
+
+        for i, u in enumerate(self.red_units):
+            txt = self.font.render(f"{u['id']}: HP {u['hp']:>3} AMMO {u['ammo']:>2} F {u['fuel']:>3.0f} M {u['morale']:>3}", True, (240, 60, 60) if u["alive"] else (80, 80, 80))
+            self.screen.blit(txt, (self.window_w // 2, hud_y + 30 + (i*16)))
+
+    # Graceful shutdown of the graphic engine resources.
     def close(self):
-# Verification check.
         if self.screen is not None:
-# Shutdown pygame services.
             pygame.quit()
-# Nullify surface.
             self.screen = None
-# Empty line.
-# Empty line.
-
 
 # ──────────────────────────────────────────────
-# Visual divider for experimental manual control.
-# Interactive Demo
+# Interactive Runtime Environment
 # ──────────────────────────────────────────────
-# Check if executing script directly.
 if __name__ == "__main__":
-# Initialize demo environment.
-    env = BattleEnv(render_mode="human", num_blue=2, num_red=2, fog_enabled=True)
-# Perform reset.
-    obs, info = env.reset()
-# Initial render draw.
+    # Initialize the manual play environment.
+    env = BattleEnv(render_mode="human", fog_enabled=True)
+    env.reset()
     env.render()
-# UI Instruction header.
-    print("\n╔══════════════════════════════════════════════════════╗")
-    print("║  TDSS Enhanced Battlefield v2 — Interactive         ║")
-    print("║  Actions: 0=Stay 1=Up 2=Down 3=Left 4=Right        ║")
-    print("║           5=Ranged Attack                           ║")
-    print("║  Format:  <unit_index> <action>                     ║")
-    print("║  Example: 0 1  (move unit B0 up)                    ║")
-    print("║  NEW: Fog of War · Supply Drops · Elevation · Morale║")
-    print("╚══════════════════════════════════════════════════════╝")
-# Main loop control.
-    running = True
-# Game loop.
-    while running:
-# Scan for system events like closing window.
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-# Handle terminal console input.
-        try:
-# Get typed command from user.
-            raw = input("Command> ").strip()
-# Blank enter check.
-            if not raw:
-                continue
-# Split components.
-            parts = raw.split()
-# Single action input logic.
-            if len(parts) == 1:
-                uid, act = 0, int(parts[0])
-# Standard index + action logic.
-            else:
-                uid, act = int(parts[0]), int(parts[1])
-# Logic check for valid action index.
-            if act not in range(NUM_ACTIONS):
-                print(f"Invalid action. Use 0-{NUM_ACTIONS-1}.")
-                continue
-# Apply chosen action to the simulation.
-            obs, reward, terminated, truncated, info = env.step(act, unit_index=uid)
-# Redraw screen.
+    
+    print("\n[TDASS Engine] Simulation ready for manual operator commands.")
+    print("Commands help: <unit_idx> <action_id> (e.g., '0 4' moves unit B0 Right)")
+    
+    # Simple interaction loop.
+    try:
+        while True:
+            # Poll Pygame events for window close events.
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT: raise KeyboardInterrupt
+            
+            cmd = input("Tactical Command> ").split()
+            if not cmd: continue
+            
+            idx, act = (int(cmd[0]), int(cmd[1])) if len(cmd) > 1 else (0, int(cmd[0]))
+            _, rew, done, _, info = env.step(act, unit_index=idx)
             env.render()
-# Notify of score changes.
-            if reward != 0:
-                print(f"  Reward: {reward:+.1f}")
-# Automatic loop restart logic for terminal mode.
-            if terminated:
-                print("Episode finished. Resetting...")
-                env.reset()
-                env.render()
-            elif truncated:
-                print("Max steps reached. Resetting...")
-                env.reset()
-                env.render()
-# Catch typing errors.
-        except ValueError:
-            print("Enter: <unit_index> <action>  or just <action> for unit 0.")
-# Catch break commands.
-        except (KeyboardInterrupt, EOFError):
-            break
-# Final shutdown call.
-    env.close()
+            
+            if done:
+                print("\n[EXFIL COMPLETE] Match termination reached.")
+                break
+    except KeyboardInterrupt:
+        print("\n[SHUTDOWN] Sequence initiated.")
+    finally:
+        env.close()

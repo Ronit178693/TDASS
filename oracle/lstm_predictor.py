@@ -1,98 +1,88 @@
-# Module docstring details for the predictor script.
+# Core neural network architecture for the Oracle AI subsystem's predictive engine.
 """
-# The name of the script and its module tag.
+# This module defines the LSTMPredictor, a recurrent neural network designed to capture temporal patterns in agent behavior.
 lstm_predictor.py — B2: Pure LSTM Action Predictor (2-Layer)
-# Separator for the description block.
 ===================================================
-# States that this uses a basic two-layer LSTM.
+# It utilizes a stacked, bidirectional LSTM to process tactical histories and output discrete action probabilities.
 Standard 2-layer LSTM architecture.
-# States it's built to match pre-trained weights.
+# The weights are often initialized from high-fidelity simulations to provide a "baseline" of expected enemy doctrine.
 Matches high-fidelity trained weights.
-# Close out the docstring block.
 """
-# Empty visual separation line.
 
-# Imports the base torch library.
+# Import the core PyTorch library for tensor calculations and gradient tracking.
 import torch
-# Imports the specifically required neural network module layers.
+# Import the neural network module to access standard layers like LSTM, Linear, and ReLU.
 import torch.nn as nn
-# Another empty line.
 
-# Create the primary prediction class which extends nn.Module.
+# Primary model class that inherits from PyTorch's base Module, allowing for easy training and serialization.
 class LSTMPredictor(nn.Module):
-# Definition block comments for the class.
     """
-# Details that this architecture predicts the next-action of units.
-    Standard LSTM-based next-action predictor (2-layer).
-# Closes the internal block.
+    Standard LSTM-based next-action predictor.
+    This architecture is optimized for sequence classification where time-series dependency is critical.
     """
-# Starts a new line.
 
-# Function definition for class creation and variable assignments.
+    # Constructor method where we define the architectural hyperparameters and initialize the layers.
     def __init__(
-# Required self pointer.
         self,
-# Argument for dimensions size of individual inputs.
+        # The number of input features per timestep (e.g., coordinates, HP, ammo).
         input_size: int,
-# Determines internal hidden layer representations; defaults to 128.
+        # The dimensionality of the hidden states; larger values allow for more complex pattern recognition.
         hidden_size: int = 128,
-# Determines the amount of recurrent stacking layers; defaults to 2.
+        # The number of stacked LSTM layers; 2 layers help capture both micro and macro temporal dependencies.
         num_layers: int = 2,
-# Determines output layer discrete bucket limits; defaults to 6 (actions).
+        # The number of target classes (e.g., 6 possible movement/attack actions).
         num_classes: int = 6,
-# Float determining network dropout chance regularization; defaults to 0.2.
+        # Dropout rate used during training to prevent overfitting by randomly zeroing activations.
         dropout: float = 0.2,
-# Ends argument definitions for this function.
     ):
-# Invokes PyTorch nn.Module setup initializations to register submodules.
+        # Call the parent class constructor to register this class as a valid PyTorch network.
         super().__init__()
-# Stores the passed-in hidden size dimensions to the object parameter state.
+        # Store the hidden size for use in state initialization or debugging.
         self.hidden_size = hidden_size
-# Stores the passed-in number of repeating layers to the object parameter state.
+        # Record the number of layers to determine if dropout can be safely applied within the LSTM block.
         self.num_layers = num_layers
-# Opens a visual separation gap line.
 
-# In-line text comment indicating sequence analysis component logic creation.
-        # Core LSTM
-# Assigns nn.LSTM recurrent network block function output layer class.
+        # Define the core Recurrent Neural Network component.
+        # We use LSTM (Long Short-Term Memory) instead of Vanilla RNN to avoid the vanishing gradient problem.
         self.lstm = nn.LSTM(
-# Configures network component processing capabilities input limitations.
+            # Pass the count of tactical features expected in each frame.
             input_size=input_size,
-# Configures internal routing and computation mapping sizing limits.
+            # Set the internal representation size for the LSTM's memory cells.
             hidden_size=hidden_size,
-# Feeds the recurrent layers parameter directly to nn function assignment argument.
+            # Stack multiple layers to build a hierarchy of temporal features.
             num_layers=num_layers,
-# Adjusts standard input configurations shape ordering parameter checks.
+            # Set batch_first=True so the input shape is (Batch, Sequence, Features), which is standard for tabular data.
             batch_first=True,
-# Enables passing context recursively backwards inside individual series samples.
+            # Enable Bidirectional processing to allow the model to look at sequences from both directions during training.
             bidirectional=True,
-# Prevents PyTorch dropout warning crash if multiple layers are absent by checking beforehand.
+            # Apply dropout between recurrent layers (only if we have more than one layer).
             dropout=dropout if num_layers > 1 else 0.0
-# Ends network component definition block wrapping structure format.
         )
-# Empty line
 
-# Text indicator for creating dense network processing translation mapping out.
-        # Classification head
-# Initializes a sequential order of layer execution mappings.
+        # Define the 'Classification Head' which translates the LSTM's high-level features into final predictions.
+        # We use a Sequential block to chain multiple operations together.
         self.classifier = nn.Sequential(
-# Begins dense fully connected mapping operation taking in doubled size mappings.
+            # The first Linear layer bridges the gap between the hidden space and the output space.
+            # We multiply hidden_size by 2 because the Bidirectional LSTM concatenates forward and backward outputs.
             nn.Linear(hidden_size * 2, hidden_size),
-# Relu acts as processing trigger function converting negative signal bounds formatting.
+            # ReLU (Rectified Linear Unit) introduces non-linearity, allowing the model to learn non-trivial decision boundaries.
             nn.ReLU(),
-# Prevents specific mapping paths from becoming exclusively necessary representations.
+            # Additional dropout layer for regularization before the final output mapping.
             nn.Dropout(dropout),
-# End mapping function collapsing space into single discrete possibilities predictions.
+            # The final Linear layer projects the data down to the specific number of possible action classes (e.g., 0-5).
             nn.Linear(hidden_size, num_classes)
-# Finalizes class operations initialization definition scope closing bracket.
         )
-# Gap
 
-# The PyTorch primary operational data routing and parsing handler method logic definition.
+    # The forward pass logic defines how data flows from the input through the layers to the final output.
     def forward(self, x):
-# Extracts temporal representations via recurrent function output mapping operations.
+        # Pass the input batch through the LSTM layers.
+        # The underscore ignores the final hidden/cell states as we only need the sequence outputs.
         lstm_out, _ = self.lstm(x)
-# Truncates list of historical operation mappings to specifically pick last sequence moment.
+        
+        # Take only the information from the VERY LAST timestep in the history window. 
+        # This represents the cumulative "knowledge" of the sequence up to the current moment.
         last_step = lstm_out[:, -1, :]
-# Returns the final parsed sequence output interpretation map mapping classifications.
+        
+        # Feed the summarized history into the classifier head to get class logits (unnormalized probabilities).
+        # These logits will be used by CrossEntropyLoss during training or Softmax during inference.
         return self.classifier(last_step)
